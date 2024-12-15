@@ -68,6 +68,7 @@ function saveSettings() {
             }, {}),
             activeTagFilters: activeTagFilters,
             tagCategories: mainWindow ? mainWindow.tagCategories : defaultTagCategories,
+            quickScanEnabled: mainWindow ? mainWindow.quickScanEnabled : false,  // 保存快速扫描状态
             lastUpdated: new Date().toISOString()
         };
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf8' });
@@ -83,7 +84,8 @@ function loadSettings() {
         let settings = {
             watchFolders: [],
             videoHistory: {},
-            tagCategories: defaultTagCategories
+            tagCategories: defaultTagCategories,
+            quickScanEnabled: false  // 添加快速扫描状态的默认值
         };
 
         if (fs.existsSync(settingsPath)) {
@@ -110,6 +112,11 @@ function loadSettings() {
             if (loadedSettings.tagCategories) {
                 settings.tagCategories = loadedSettings.tagCategories;
             }
+
+            // 加载快速扫描状态
+            if (loadedSettings.quickScanEnabled !== undefined) {
+                settings.quickScanEnabled = loadedSettings.quickScanEnabled;
+            }
         } else {
             console.log('No settings file found, will create one when saving');
         }
@@ -120,7 +127,8 @@ function loadSettings() {
         return {
             watchFolders: [],
             videoHistory: {},
-            tagCategories: defaultTagCategories
+            tagCategories: defaultTagCategories,
+            quickScanEnabled: false
         };
     }
 }
@@ -158,41 +166,32 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
     
+    // 加载设置并应用到窗口
+    const settings = loadSettings();
+    mainWindow.tagCategories = settings.tagCategories;
+    mainWindow.quickScanEnabled = settings.quickScanEnabled;  // 恢复快速扫描状态
+
+    // 发送标签分类到渲染进程
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.send('tag-categories-loaded', mainWindow.tagCategories);
+        // 如果有文件夹，使用保存的快速扫描状态进行扫描
+        if (watchFolders.size > 0) {
+            setupWatcher();
+            watchFolders.forEach(folder => {
+                mainWindow.webContents.send('folder-selected', folder);
+            });
+            updateVideoList(mainWindow.quickScanEnabled);
+        }
+    });
+
     return mainWindow;
 }
 
 // 递归扫描文件夹中的视频文件
-async function scanVideoFiles() {
+async function scanVideoFiles(quickScan = false) {
     let videos = [];
     let totalFiles = 0;
     let processedFiles = 0;
-    
-    // 首先计算总文件数
-    function countFiles(folder) {
-        try {
-            const files = fs.readdirSync(folder);
-            for (const file of files) {
-                const filePath = path.join(folder, file);
-                const stat = fs.statSync(filePath);
-                
-                if (stat.isDirectory()) {
-                    countFiles(filePath);
-                } else if (stat.isFile()) {
-                    const ext = path.extname(file).toLowerCase();
-                    if (videoExtensions.includes(ext)) {
-                        totalFiles++;
-                    }
-                }
-            }
-        } catch (err) {
-            console.error(`Error counting files in ${folder}:`, err);
-        }
-    }
-    
-    // 扫描所有文件夹以计算总数
-    for (const folder of watchFolders) {
-        countFiles(folder);
-    }
     
     async function scanFolder(folder) {
         try {
@@ -207,43 +206,43 @@ async function scanVideoFiles() {
                     const ext = path.extname(file).toLowerCase();
                     if (videoExtensions.includes(ext)) {
                         const videoId = getVideoId(filePath);
-                        let videoInfo = videoHistory.get(videoId) || {
-                            watched: false,
-                            watchTime: 0,
-                            duration: 0,
-                            lastPlayed: null,
-                            firstSeen: new Date().toISOString(),
-                            playCount: 0,
-                            significantPlays: 0,
-                            rating: 0,
-                            tags: []
-                        };
-
-                        // 如果视频没有时长信息，尝试获取
-                        if (!videoInfo.duration) {
-                            try {
-                                // 发送进度更新
-                                processedFiles++;
-                                mainWindow.webContents.send('scan-progress', {
-                                    current: processedFiles,
-                                    total: totalFiles,
-                                    currentFile: filePath
-                                });
-
-                                videoInfo.duration = await getVideoDurationInSeconds(filePath);
-                                videoHistory.set(videoId, videoInfo);
-                                saveSettings();
-                            } catch (err) {
-                                console.error(`Error getting duration for ${filePath}:`, err);
-                            }
-                        } else {
-                            // 即使已有时长信息，也更新进度
+                        let videoInfo = videoHistory.get(videoId);
+                        
+                        // 如果没有历史记录，创建一个新的记录
+                        if (!videoInfo) {
+                            videoInfo = {
+                                watched: false,
+                                watchTime: 0,
+                                duration: 0,
+                                lastPlayed: null,
+                                firstSeen: new Date().toISOString(),
+                                playCount: 0,
+                                significantPlays: 0,
+                                rating: 0,
+                                tags: []
+                            };
+                            videoHistory.set(videoId, videoInfo);
+                        }
+                        
+                        // 只在非快速扫描模式下更新度和获取时长
+                        if (!quickScan) {
                             processedFiles++;
                             mainWindow.webContents.send('scan-progress', {
                                 current: processedFiles,
                                 total: totalFiles,
                                 currentFile: filePath
                             });
+                            
+                            // 只在非快速扫描模式下获取时长
+                            if (!videoInfo.duration) {
+                                try {
+                                    videoInfo.duration = await getVideoDurationInSeconds(filePath);
+                                    videoHistory.set(videoId, videoInfo);
+                                    saveSettings();
+                                } catch (err) {
+                                    console.error(`Error getting duration for ${filePath}:`, err);
+                                }
+                            }
                         }
                         
                         videos.push({
@@ -267,6 +266,35 @@ async function scanVideoFiles() {
             }
         } catch (err) {
             console.error(`Error scanning folder ${folder}:`, err);
+        }
+    }
+
+    // 只在非快速扫描模式下计算总文件数
+    if (!quickScan) {
+        function countFiles(folder) {
+            try {
+                const files = fs.readdirSync(folder);
+                for (const file of files) {
+                    const filePath = path.join(folder, file);
+                    const stat = fs.statSync(filePath);
+                    
+                    if (stat.isDirectory()) {
+                        countFiles(filePath);
+                    } else if (stat.isFile()) {
+                        const ext = path.extname(file).toLowerCase();
+                        if (videoExtensions.includes(ext)) {
+                            totalFiles++;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`Error counting files in ${folder}:`, err);
+            }
+        }
+        
+        // 扫描所有文件夹以计算总数
+        for (const folder of watchFolders) {
+            countFiles(folder);
         }
     }
 
@@ -298,51 +326,43 @@ function setupWatcher() {
         .on('add', filePath => {
             const ext = path.extname(filePath).toLowerCase();
             if (videoExtensions.includes(ext)) {
-                updateVideoList();
+                // 文件变化时也要保持快速扫描模式
+                const quickScan = mainWindow && mainWindow.quickScanEnabled;
+                updateVideoList(quickScan);
             }
         })
         .on('unlink', filePath => {
             const ext = path.extname(filePath).toLowerCase();
             if (videoExtensions.includes(ext)) {
-                updateVideoList();
+                // 文件变化时也要保持快速扫描模式
+                const quickScan = mainWindow && mainWindow.quickScanEnabled;
+                updateVideoList(quickScan);
             }
         })
         .on('addDir', () => {
-            updateVideoList();
+            // 文件夹变化时也要保持快速扫描模式
+            const quickScan = mainWindow && mainWindow.quickScanEnabled;
+            updateVideoList(quickScan);
         })
         .on('unlinkDir', () => {
-            updateVideoList();
+            // 文件夹变化时也要保持快速扫描模式
+            const quickScan = mainWindow && mainWindow.quickScanEnabled;
+            updateVideoList(quickScan);
         });
 }
 
 // 更新视频列表
-async function updateVideoList() {
-    const videos = await scanVideoFiles();
+async function updateVideoList(quickScan = false) {
+    const videos = await scanVideoFiles(quickScan);
     if (mainWindow) {
         mainWindow.webContents.send('update-video-list', videos);
     }
 }
 
 app.whenReady().then(() => {
-    // 先创建窗口
+    // 先创建口
     mainWindow = createWindow();
     
-    // 加载设置并应用到窗口
-    const settings = loadSettings();
-    mainWindow.tagCategories = settings.tagCategories;
-
-    // 发送标签分类到渲染进程
-    mainWindow.webContents.on('did-finish-load', () => {
-        mainWindow.webContents.send('tag-categories-loaded', mainWindow.tagCategories);
-    });
-
-    if (watchFolders.size > 0) {
-        setupWatcher();
-        watchFolders.forEach(folder => {
-            mainWindow.webContents.send('folder-selected', folder);
-        });
-    }
-
     // 处理标签过滤器状态请求
     ipcMain.on('request-tag-filters', (event) => {
         try {
@@ -354,7 +374,7 @@ app.whenReady().then(() => {
         }
     });
 
-    // 保存标签过滤器状态
+    // 保存标签过滤器态
     ipcMain.on('save-tag-filters', (event, filters) => {
         if (mainWindow) {
             mainWindow.webContents.activeTagFilters = filters;
@@ -372,8 +392,9 @@ app.whenReady().then(() => {
             firstSeen: new Date().toISOString(),
             playCount: 0,
             significantPlays: 0,
-            recentPlayCounted: false,  // 添加标记，记录本次播放是否已计数
-            rating: 0
+            recentPlayCounted: false,
+            rating: 0,
+            playStartTime: null  // 添加播放开始时间字段
         };
 
         // 更新最长播放时间
@@ -381,32 +402,23 @@ app.whenReady().then(() => {
         videoInfo.duration = duration;
         videoInfo.lastPlayed = new Date().toISOString();
         
-        // 检查是否需要增加播放次数（播放超过2分钟或播放完成90%以上）
-        if (!videoInfo.recentPlayCounted && 
-            ((currentTime >= 120) || (duration > 0 && currentTime >= duration * 0.9))) {
-            if (videoInfo.watched) {  // 只有已观看的视频增加播放次数
-                videoInfo.playCount++;
-                videoInfo.recentPlayCounted = true;  // 标记本次播放已计数
-                
-                // 通知渲染进程更新播放次数
-                mainWindow.webContents.send('video-state-updated', {
-                    videoId,
-                    updates: {
-                        playCount: videoInfo.playCount
-                    }
-                });
-            }
-        }
-
-        // 如果播放时间超过2分钟，增加有效播放次数
-        if (currentTime >= 120 && !videoInfo.recentSignificantPlay) {
-            videoInfo.significantPlays++;
-            videoInfo.recentSignificantPlay = true;  // 标记本次完整播放已计数
+        // 检查是否需要增加播放次数
+        const now = Date.now();
+        const playDuration = videoInfo.playStartTime ? (now - videoInfo.playStartTime) / 1000 : 0;  // 转换为秒
+        const isLongEnough = playDuration >= 120;  // 本次播放超过2分钟
+        const isAlmostComplete = duration > 0 && currentTime >= duration * 0.98;  // 播放完成98%
+        
+        if (!videoInfo.recentPlayCounted && (isLongEnough || isAlmostComplete)) {
+            videoInfo.playCount++;
+            videoInfo.recentPlayCounted = true;  // 标记本次播放已计数
+            videoInfo.significantPlays++;  // 同时增加有效播放次数
+            videoInfo.recentSignificantPlay = true;  // 标记本次有效播放已计数
             
-            // 通知渲染进程更新完整播放次数
+            // 通知渲染进程更新播放次数
             mainWindow.webContents.send('video-state-updated', {
                 videoId,
                 updates: {
+                    playCount: videoInfo.playCount,
                     significantPlays: videoInfo.significantPlays
                 }
             });
@@ -423,16 +435,15 @@ app.whenReady().then(() => {
             const updates = {};
             
             if (!videoInfo.watched) {
-                videoInfo.watched = true;  // 只要开始播放就标记为已观看
-                videoInfo.playCount = 1;   // 首次播放计数为1
+                videoInfo.watched = true;  // 只要开始播放就标记为已看
                 updates.watched = true;
                 updates.isNew = false;
-                updates.playCount = 1;
             }
             
-            // 重置播放计数标记
+            // 重置���放计数标记并记录开始时间
             videoInfo.recentPlayCounted = false;
             videoInfo.recentSignificantPlay = false;
+            videoInfo.playStartTime = Date.now();  // 记录播放开始时间
             
             videoHistory.set(videoId, videoInfo);
             saveSettings();
@@ -454,6 +465,14 @@ app.whenReady().then(() => {
             videoInfo.duration = duration;
             videoHistory.set(videoId, videoInfo);
             saveSettings();
+            
+            // 通知渲染进程更新视频状态
+            mainWindow.webContents.send('video-state-updated', {
+                videoId,
+                updates: {
+                    duration: duration
+                }
+            });
         }
     });
 
@@ -467,17 +486,23 @@ app.whenReady().then(() => {
         }
     });
 
-    ipcMain.on('add-folder', (event, folder) => {
+    ipcMain.on('add-folder', (event, { folder, quickScan }) => {
         watchFolders.add(folder);
+        // 保存快速扫描状态
+        if (mainWindow) {
+            mainWindow.quickScanEnabled = quickScan;
+        }
         setupWatcher();
-        updateVideoList();
+        updateVideoList(quickScan);
         saveSettings();
     });
 
     ipcMain.on('remove-folder', (event, folder) => {
         watchFolders.delete(folder);
         setupWatcher();
-        updateVideoList();
+        // 移除文件夹时也要保持快速扫描模式
+        const quickScan = mainWindow && mainWindow.quickScanEnabled;
+        updateVideoList(quickScan);
         saveSettings();
     });
 

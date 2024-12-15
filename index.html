@@ -153,7 +153,7 @@
             margin-top: auto;
         }
 
-        button {
+        .controls button {
             background: #4CAF50;
             border: none;
             color: white;
@@ -164,8 +164,47 @@
             transition: background-color 0.3s;
         }
 
-        button:hover {
+        .controls button:hover {
             background: #45a049;
+        }
+
+        .controls button.active {
+            background: #45a049;
+        }
+
+        .random-play-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            cursor: pointer;
+            user-select: none;
+            background: #333;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .random-play-label:hover {
+            background: #3a3a3a;
+        }
+
+        .random-play-text {
+            color: white;
+            font-size: 14px;
+        }
+
+        #random-play-checkbox {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .controls .control-group {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .empty-message {
@@ -943,6 +982,44 @@
             width: 100%;
             margin-bottom: 10px;
         }
+
+        .scan-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .scan-option-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .playback-controls {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .control-button {
+            flex: 1;
+            background: #444;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .control-button:hover {
+            background: #555;
+        }
+
+        .control-button:active {
+            background: #333;
+        }
     </style>
 </head>
 <body>
@@ -967,6 +1044,10 @@
                     <span>标签过滤</span>
                     <span class="filter-count" id="filter-count"></span>
                 </button>
+                <label class="random-play-label">
+                    <input type="checkbox" id="random-play-checkbox">
+                    <span class="random-play-text">随��播放</span>
+                </label>
             </div>
             <div class="video-list" id="video-list">
                 <!-- 视频列表将在这里动态生成 -->
@@ -985,6 +1066,10 @@
             </div>
             <div class="controls">
                 <div id="current-video-info"></div>
+                <div class="playback-controls">
+                    <button id="prev-video" class="control-button">上一个视频</button>
+                    <button id="next-video" class="control-button">下一个视频</button>
+                </div>
                 <div class="player-rating">
                     <div class="player-rating-label">评分：</div>
                     <div id="player-rating-stars" class="player-rating-stars">
@@ -1054,7 +1139,7 @@
             </div>
             <div class="tag-manager-panel" id="categories-panel">
                 <div class="category-manager" id="category-manager">
-                    <!-- 分类列表将在这里动���生成 -->
+                    <!-- 分类列表将在这里动态生成 -->
                 </div>
                 <div class="add-category">
                     <input type="text" id="new-category-input" placeholder="输入新分类名称">
@@ -1088,6 +1173,12 @@
                 <button class="quick-tags-close" id="folder-manager-close">&times;</button>
             </div>
             <div class="folder-manager-list">
+                <div class="scan-option">
+                    <label class="scan-option-label">
+                        <input type="checkbox" id="quick-scan" checked>
+                        快速扫描（不立即获取视频时长，播放时再获取）
+                    </label>
+                </div>
                 <button id="add-folder">添加文件夹</button>
                 <div id="folder-container">
                     <!-- Folder list will be generated here -->

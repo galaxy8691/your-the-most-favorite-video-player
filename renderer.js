@@ -5,6 +5,7 @@ let videoList = [];
 let watchFolders = new Set();
 let currentVideoId = null;
 let activeTagFilters = [];
+let randomPlayEnabled = false;
 
 // 加载状态控制
 function showLoading(message) {
@@ -49,8 +50,80 @@ videoPlayer.addEventListener('ended', () => {
             currentTime: videoPlayer.duration,
             duration: videoPlayer.duration
         });
+
+        // 播放下一个视频
+        playNextVideo();
     }
 });
+
+// 播放下一个视频
+function playNextVideo() {
+    const container = document.getElementById('video-list');
+    const videoItems = Array.from(container.getElementsByClassName('video-item'));
+    if (videoItems.length === 0) return;
+
+    // 获取当前视频的索引
+    const currentIndex = videoItems.findIndex(item => item.getAttribute('data-video-id') === currentVideoId);
+    let nextItem;
+
+    if (randomPlayEnabled) {
+        // 随机模式：随机选择一个不是当前视频的项目
+        let randomIndex;
+        do {
+            randomIndex = Math.floor(Math.random() * videoItems.length);
+        } while (videoItems.length > 1 && randomIndex === currentIndex);
+        nextItem = videoItems[randomIndex];
+    } else {
+        // 顺序模式：选择下一个视频，如果是��后一个则循环到第一个
+        const nextIndex = (currentIndex + 1) % videoItems.length;
+        nextItem = videoItems[nextIndex];
+    }
+
+    // 触发点击事件来播放下一个视频
+    if (nextItem) {
+        nextItem.click();
+    }
+}
+
+// 播放上一个视频
+function playPrevVideo() {
+    const container = document.getElementById('video-list');
+    const videoItems = Array.from(container.getElementsByClassName('video-item'));
+    if (videoItems.length === 0) return;
+
+    // 获取当前视频的索引
+    const currentIndex = videoItems.findIndex(item => item.getAttribute('data-video-id') === currentVideoId);
+    let prevItem;
+
+    if (randomPlayEnabled) {
+        // 随机模式：随机选择一个不是当前视频的项目
+        let randomIndex;
+        do {
+            randomIndex = Math.floor(Math.random() * videoItems.length);
+        } while (videoItems.length > 1 && randomIndex === currentIndex);
+        prevItem = videoItems[randomIndex];
+    } else {
+        // 顺序模式：选择上一个视频，如果是第一个则循环到最后一个
+        const prevIndex = (currentIndex - 1 + videoItems.length) % videoItems.length;
+        prevItem = videoItems[prevIndex];
+    }
+
+    // 触发点击事件来播放上一个视频
+    if (prevItem) {
+        prevItem.click();
+    }
+}
+
+// 添加随机播放控制按钮到控制栏
+function addRandomPlayControl() {
+    // 获取随机播放复选框
+    const randomPlayCheckbox = document.getElementById('random-play-checkbox');
+    
+    // 添加事件监听器
+    randomPlayCheckbox.addEventListener('change', (e) => {
+        randomPlayEnabled = e.target.checked;
+    });
+}
 
 // 跟踪视频播放进度
 videoPlayer.addEventListener('timeupdate', () => {
@@ -68,18 +141,55 @@ videoPlayer.addEventListener('timeupdate', () => {
 });
 
 // 视频加载完成后自动播放
-videoPlayer.addEventListener('loadedmetadata', () => {
+videoPlayer.addEventListener('loadedmetadata', async () => {
     if (currentVideoId) {
         // 通知视频开始播放
         ipcRenderer.send('video-started', {
             videoId: currentVideoId
         });
         
-        ipcRenderer.send('video-metadata-loaded', {
-            videoId: currentVideoId,
-            duration: videoPlayer.duration
-        });
+        // 获取视频时长（如果还没有）
+        const currentVideo = videoList.find(v => v.id === currentVideoId);
+        if (currentVideo && !currentVideo.duration) {
+            try {
+                const duration = videoPlayer.duration;
+                currentVideo.duration = duration;
+                
+                // 更新视频信息显示
+                const videoItem = document.querySelector(`.video-item[data-video-id="${currentVideoId}"]`);
+                if (videoItem) {
+                    const info = videoItem.querySelector('.video-item-info');
+                    if (info) {
+                        const relativePath = getRelativePath(currentVideo.path, currentVideo.folder);
+                        let infoText = `位置: ${relativePath}\n时长: ${formatDuration(duration)}`;
+                        if (currentVideo.lastPlayed) {
+                            infoText += `\n上次播放: ${formatDate(currentVideo.lastPlayed)}`;
+                        }
+                        if (currentVideo.watchTime > 0) {
+                            const progress = Math.round((currentVideo.watchTime / duration) * 100);
+                            infoText += `\n播放进度: ${progress}% (${formatDuration(currentVideo.watchTime)})`;
+                        }
+                        if (currentVideo.playCount > 0) {
+                            infoText += `\n播放次数: ${currentVideo.playCount}次`;
+                            if (currentVideo.significantPlays > 0) {
+                                infoText += ` (完整观看${currentVideo.significantPlays}次)`;
+                            }
+                        }
+                        info.textContent = infoText;
+                    }
+                }
+                
+                // 保存时长信息
+                ipcRenderer.send('video-metadata-loaded', {
+                    videoId: currentVideoId,
+                    duration: duration
+                });
+            } catch (error) {
+                console.error('Error getting video duration:', error);
+            }
+        }
     }
+    
     // 确保视频可以播放
     videoPlayer.play().catch(e => {
         console.error('Autoplay failed:', e);
@@ -98,8 +208,9 @@ videoPlayer.addEventListener('loadedmetadata', () => {
 
 // 添加文件夹按钮事件
 document.getElementById('add-folder').addEventListener('click', () => {
+    const quickScan = document.getElementById('quick-scan').checked;
     showLoading('正在选择文件夹...');
-    ipcRenderer.send('select-folder');
+    ipcRenderer.send('select-folder', quickScan);
 });
 
 // 更新文件夹列表显示
@@ -202,7 +313,7 @@ function initializePlayerRating() {
     });
 }
 
-// 在文档加载完成后初始化评分控���
+// 在文档加载完成后初始化评分控件
 document.addEventListener('DOMContentLoaded', initializePlayerRating);
 
 // 排序视频列表
@@ -287,7 +398,7 @@ function initializeTagFilter() {
         updateFilterList();
     };
     
-    // 关闭对话框的各种方式
+    // 关闭对话框的各��方式
     const closeModal = () => modal.classList.remove('show');
     
     closeBtn.onclick = closeModal;
@@ -378,7 +489,7 @@ function updateFilterList() {
             const content = document.createElement('div');
             content.className = 'tag-category-content';
             
-            // ��建该分类下的标签
+            // 建该分类下的标签
             categorizedTags[category].sort().forEach(tag => {
                 const tagItem = document.createElement('div');
                 tagItem.className = 'tag-filter-item';
@@ -715,7 +826,7 @@ function updateTagManagerList() {
     container.innerHTML = '';
     
     // 收集所有标签信息
-    const tagInfo = new Map(); // 存储标签使用次数和分类信息
+    const tagInfo = new Map(); // 存标签使用次数和分类信息
     videoList.forEach(video => {
         if (video.tags) {
             video.tags.forEach(tag => {
@@ -819,6 +930,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTagManager();
     initializeTagFilter();
     initializeFolderManager();
+    addRandomPlayControl();  // 添加随机播放控制
+
+    // 添加上一个/下一个视频按钮的事件监听
+    document.getElementById('prev-video').addEventListener('click', playPrevVideo);
+    document.getElementById('next-video').addEventListener('click', playNextVideo);
+
     // 请求保存的标签过滤器状态
     ipcRenderer.send('request-tag-filters');
 });
@@ -910,6 +1027,9 @@ function updateVideoList(maintainOrder = false) {
             
             videoItem.classList.add('active');
             
+            // 确保当前播放的视频在视野内
+            videoItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
             // 在切换视频前保存当前视频的播放进度
             if (currentVideoId) {
                 const currentVideo = videoList.find(v => v.id === currentVideoId);
@@ -933,18 +1053,18 @@ function updateVideoList(maintainOrder = false) {
             // 检查是否应该从头开始播放
             const isVideoFinished = video.watchTime >= (video.duration * 0.98); // 如果播放进度超过98%，认为已完成
             if (isVideoFinished) {
-                videoPlayer.currentTime = 0; // 从头开始播放
+                videoPlayer.currentTime = 0; // 从开始播放
             } else {
                 videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
             }
             
-            // 如果之前在播放，或者这是新选择的视频，就自动播放
+            // 如果之前��播放，或者这是新选择的视频，就自动播放
             if (wasPlaying || oldSrc !== video.path) {
                 const playPromise = videoPlayer.play();
                 if (playPromise !== undefined) {
                     playPromise.catch(e => {
                         console.error('Play failed:', e);
-                        // 如果放失败，添加一次性点击事件
+                        // 如果放失败，添加一次性击事件
                         videoPlayer.addEventListener('click', () => {
                             videoPlayer.play();
                         }, { once: true });
@@ -1031,7 +1151,7 @@ function updateVideoState(videoId, updates) {
                     oldTags.replaceWith(newTags);
                 }
                 
-                // 如果是当前播放的视频，更新播放器标签
+                // 如果是当前播放的视频，���新播放器标签
                 if (videoId === currentVideoId) {
                     updatePlayerTags(updates.tags);
                 }
@@ -1046,10 +1166,11 @@ function updateVideoState(videoId, updates) {
 // 接收文件夹选择结果
 ipcRenderer.on('folder-selected', (event, folderPath) => {
     if (!watchFolders.has(folderPath)) {
+        const quickScan = document.getElementById('quick-scan').checked;
         showLoading('正在扫描视频文件夹...');
         watchFolders.add(folderPath);
         updateFolderList();
-        ipcRenderer.send('add-folder', folderPath);
+        ipcRenderer.send('add-folder', { folder: folderPath, quickScan });
     } else {
         hideLoading();
     }
