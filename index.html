@@ -236,6 +236,476 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .video-item-rating {
+            margin-top: 4px;
+            color: #FFD700;
+            font-size: 16px;
+            pointer-events: none;
+        }
+
+        .video-item-rating span {
+            margin-right: 2px;
+        }
+
+        .video-item-rating span.active {
+            color: #FFD700;
+        }
+
+        .video-item-rating span.inactive {
+            color: #666;
+        }
+
+        .player-rating {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-rating-label {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .player-rating-stars {
+            color: #FFD700;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .player-rating-stars span {
+            margin-right: 4px;
+            transition: color 0.2s, transform 0.1s;
+        }
+
+        .player-rating-stars span:hover {
+            color: #FFC107;
+            transform: scale(1.2);
+        }
+
+        .player-rating-stars span.active {
+            color: #FFD700;
+        }
+
+        .player-rating-stars span.inactive {
+            color: #666;
+        }
+
+        .sort-controls {
+            padding: 10px 15px;
+            border-bottom: 1px solid #3a3a3a;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sort-controls select {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 5px;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        .sort-controls select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .tag-filter {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .tag-filter-item {
+            background: #444;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .tag-filter-item:hover {
+            background: #555;
+        }
+
+        .tag-filter-item.active {
+            background: #4CAF50;
+        }
+
+        .video-tags {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+
+        .video-tag {
+            background: #444;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .player-tags {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .player-tags-list {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .player-tag {
+            background: #444;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .player-tag .remove-tag {
+            cursor: pointer;
+            color: #ff4444;
+            font-weight: bold;
+        }
+
+        .add-tag {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .add-tag-input {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+            width: 150px;
+        }
+
+        .add-tag-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .quick-tags {
+            position: relative;
+            display: inline-block;
+        }
+
+        .quick-tags-button {
+            background: #444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .quick-tags-button:hover {
+            background: #555;
+        }
+
+        .quick-tags-dropdown {
+            display: none;
+            position: absolute;
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            right: 0;
+            top: 100%;
+            margin-top: 5px;
+            min-width: 150px;
+        }
+
+        .quick-tags-dropdown.show {
+            display: block;
+        }
+
+        .quick-tag-item {
+            padding: 5px 10px;
+            cursor: pointer;
+            color: white;
+            white-space: nowrap;
+        }
+
+        .quick-tag-item:hover {
+            background: #444;
+        }
+
+        .quick-tags-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .quick-tags-modal.show {
+            display: flex;
+        }
+
+        .quick-tags-content {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            width: 500px;
+            max-width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .quick-tags-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #444;
+            gap: 10px;
+        }
+
+        .quick-tags-header h3 {
+            margin: 0;
+            color: white;
+        }
+
+        .quick-tags-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .quick-tags-close:hover {
+            color: white;
+        }
+
+        .quick-tags-list {
+            overflow-y: auto;
+            max-height: 300px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 10px 0;
+        }
+
+        .quick-tag-checkbox {
+            display: none;
+        }
+
+        .quick-tag-label {
+            display: inline-block;
+            padding: 5px 12px;
+            background: #444;
+            color: white;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .quick-tag-checkbox:checked + .quick-tag-label {
+            background: #4CAF50;
+        }
+
+        .quick-tags-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+
+        .quick-tags-actions button {
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: none;
+        }
+
+        .quick-tags-cancel {
+            background: #666;
+            color: white;
+        }
+
+        .quick-tags-apply {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .tag-category {
+            border: 1px solid #444;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .tag-category-header {
+            background: #333;
+            padding: 10px 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .tag-category-header:hover {
+            background: #3a3a3a;
+        }
+
+        .tag-category-title {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .tag-category-arrow {
+            transition: transform 0.3s;
+        }
+
+        .tag-category.collapsed .tag-category-arrow {
+            transform: rotate(-90deg);
+        }
+
+        .tag-category-content {
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            transition: max-height 0.3s ease-out;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .tag-category.collapsed .tag-category-content {
+            max-height: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .tag-category-select {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .tag-category-select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .quick-tags-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #444;
+            gap: 10px;
+        }
+
+        .quick-tags-header-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .tag-manager-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .tag-manager-modal.show {
+            display: flex;
+        }
+
+        .tag-manager-content {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            width: 600px;
+            max-width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .tag-manager-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #444;
+        }
+
+        .tag-manager-list {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 300px;
+        }
+
+        .tag-manager-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-bottom: 1px solid #333;
+        }
+
+        .tag-manager-item:hover {
+            background: #333;
+        }
+
+        .tag-manager-name {
+            flex: 1;
+        }
+
+        .tag-manager-category {
+            width: 120px;
+        }
+
+        .tag-manager-count {
+            width: 80px;
+            text-align: right;
+            color: #888;
+        }
     </style>
 </head>
 <body>
@@ -250,6 +720,17 @@
                 <button id="add-folder">添加文件夹</button>
                 <div id="folder-container">
                     <!-- 文件夹列表将在这里动态生成 -->
+                </div>
+            </div>
+            <div class="sort-controls">
+                <select id="sort-type">
+                    <option value="new">按新旧排序</option>
+                    <option value="rating">按评分排序</option>
+                    <option value="name">按名称排序</option>
+                </select>
+                <button id="manage-tags" class="manage-tags-button">管理标签</button>
+                <div class="tag-filter" id="tag-filter">
+                    <!-- 标签过滤器将在这里动态生成 -->
                 </div>
             </div>
             <div class="video-list" id="video-list">
@@ -269,6 +750,69 @@
             </div>
             <div class="controls">
                 <div id="current-video-info"></div>
+                <div class="player-rating">
+                    <div class="player-rating-label">评分：</div>
+                    <div id="player-rating-stars" class="player-rating-stars">
+                        <span>★</span>
+                        <span>★</span>
+                        <span>★</span>
+                        <span>★</span>
+                        <span>★</span>
+                    </div>
+                </div>
+                <div class="player-tags">
+                    <div class="player-tags-list" id="player-tags-list">
+                        <!-- 当前视频的标签将在这里动态生成 -->
+                    </div>
+                    <div class="add-tag">
+                        <input type="text" class="add-tag-input" id="add-tag-input" placeholder="添加新标签，回车确认">
+                        <div class="quick-tags">
+                            <button class="quick-tags-button" id="quick-tags-button">快速添加</button>
+                            <div class="quick-tags-dropdown" id="quick-tags-dropdown">
+                                <!-- 已有标签将在这里动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="quick-tags-modal" id="quick-tags-modal">
+        <div class="quick-tags-content">
+            <div class="quick-tags-header">
+                <h3>选择标签</h3>
+                <div class="quick-tags-header-controls">
+                    <select class="tag-category-select" id="tag-category-select">
+                        <option value="">选择标签分类...</option>
+                        <option value="type">类型</option>
+                        <option value="content">内容</option>
+                        <option value="quality">质量</option>
+                        <option value="status">状态</option>
+                        <option value="other">其他</option>
+                    </select>
+                    <button class="quick-tags-close" id="quick-tags-close">&times;</button>
+                </div>
+            </div>
+            <div id="quick-tags-list">
+                <!-- 标签分类将在这里动态生成 -->
+            </div>
+            <div class="quick-tags-actions">
+                <button class="quick-tags-cancel" id="quick-tags-cancel">取消</button>
+                <button class="quick-tags-apply" id="quick-tags-apply">应用</button>
+            </div>
+        </div>
+    </div>
+    <div class="tag-manager-modal" id="tag-manager-modal">
+        <div class="tag-manager-content">
+            <div class="tag-manager-header">
+                <h3>标签管理</h3>
+                <button class="quick-tags-close" id="tag-manager-close">&times;</button>
+            </div>
+            <div class="tag-manager-list" id="tag-manager-list">
+                <!-- 标签列表将在这里动态生成 -->
+            </div>
+            <div class="quick-tags-actions">
+                <button class="quick-tags-cancel" id="tag-manager-cancel">关闭</button>
             </div>
         </div>
     </div>

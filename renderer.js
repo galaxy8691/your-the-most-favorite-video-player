@@ -4,6 +4,7 @@ const path = require('path');
 let videoList = [];
 let watchFolders = new Set();
 let currentVideoId = null;
+let activeTagFilters = [];
 
 // 加载状态控制
 function showLoading(message) {
@@ -38,13 +39,30 @@ videoPlayer.addEventListener('error', (e) => {
 // 确保音量正
 videoPlayer.volume = 1.0;
 
-// 跟踪视频播放进度
-videoPlayer.addEventListener('timeupdate', () => {
+// 视频播放结束处理
+videoPlayer.addEventListener('ended', () => {
+    // 不重置视频位置，保持在结束位置
+    // 发送最终的播放进度
     if (currentVideoId) {
         ipcRenderer.send('update-video-progress', {
             videoId: currentVideoId,
-            currentTime: videoPlayer.currentTime,
+            currentTime: videoPlayer.duration,
             duration: videoPlayer.duration
+        });
+    }
+});
+
+// 跟踪视频播放进度
+videoPlayer.addEventListener('timeupdate', () => {
+    if (currentVideoId) {
+        // 每次更新进度时都保存当前时间
+        const currentTime = videoPlayer.currentTime;
+        const duration = videoPlayer.duration;
+        
+        ipcRenderer.send('update-video-progress', {
+            videoId: currentVideoId,
+            currentTime: currentTime,
+            duration: duration
         });
     }
 });
@@ -62,8 +80,19 @@ videoPlayer.addEventListener('loadedmetadata', () => {
             duration: videoPlayer.duration
         });
     }
+    // 确保视频可以播放
     videoPlayer.play().catch(e => {
         console.error('Autoplay failed:', e);
+        // 如果自动播放失败，再次尝试播放
+        const playPromise = videoPlayer.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(() => {
+                // 如果还是失败，添加点击事件让用户手动触发播放
+                videoPlayer.addEventListener('click', () => {
+                    videoPlayer.play();
+                }, { once: true });
+            });
+        }
     });
 });
 
@@ -132,6 +161,458 @@ function formatDuration(seconds) {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
+// 创建只读评分星星（用于列表显示）
+function createRatingStars(rating) {
+    const ratingDiv = document.createElement('div');
+    ratingDiv.className = 'video-item-rating';
+    
+    for (let i = 1; i <= 5; i++) {
+        const star = document.createElement('span');
+        star.textContent = '★';
+        star.className = i <= (rating || 0) ? 'active' : 'inactive';
+        ratingDiv.appendChild(star);
+    }
+    
+    return ratingDiv;
+}
+
+// 更新播放器评分显示
+function updatePlayerRating(rating = 0) {
+    const stars = document.querySelectorAll('#player-rating-stars span');
+    stars.forEach((star, index) => {
+        star.className = index < rating ? 'active' : 'inactive';
+    });
+}
+
+// 初始化播放器评分控件
+function initializePlayerRating() {
+    const ratingStars = document.getElementById('player-rating-stars');
+    const stars = ratingStars.querySelectorAll('span');
+    
+    stars.forEach((star, index) => {
+        star.onclick = () => {
+            if (currentVideoId) {
+                const rating = index + 1;
+                ipcRenderer.send('update-video-rating', {
+                    videoId: currentVideoId,
+                    rating: rating
+                });
+            }
+        };
+    });
+}
+
+// 在文档加载完成后初始化评分控件
+document.addEventListener('DOMContentLoaded', initializePlayerRating);
+
+// 排序视频列表
+function sortVideoList(videos, sortType) {
+    switch (sortType) {
+        case 'rating':
+            return videos.sort((a, b) => {
+                if (b.rating !== a.rating) {
+                    return (b.rating || 0) - (a.rating || 0);
+                }
+                return a.filename.localeCompare(b.filename);
+            });
+        case 'name':
+            return videos.sort((a, b) => a.filename.localeCompare(b.filename));
+        case 'new':
+        default:
+            return videos.sort((a, b) => {
+                if (a.isNew !== b.isNew) {
+                    return b.isNew - a.isNew;
+                }
+                return a.filename.localeCompare(b.filename);
+            });
+    }
+}
+
+// 创建视频标签显示
+function createVideoTags(tags = []) {
+    const tagsDiv = document.createElement('div');
+    tagsDiv.className = 'video-tags';
+    
+    tags.forEach(tag => {
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'video-tag';
+        tagSpan.textContent = tag;
+        tagsDiv.appendChild(tagSpan);
+    });
+    
+    return tagsDiv;
+}
+
+// 更新播放器标签显示
+function updatePlayerTags(tags = []) {
+    const tagsList = document.getElementById('player-tags-list');
+    tagsList.innerHTML = '';
+    
+    tags.forEach(tag => {
+        const tagDiv = document.createElement('div');
+        tagDiv.className = 'player-tag';
+        
+        const tagText = document.createElement('span');
+        tagText.textContent = tag;
+        
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'remove-tag';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => {
+            if (currentVideoId) {
+                ipcRenderer.send('remove-tag', {
+                    videoId: currentVideoId,
+                    tag: tag
+                });
+            }
+        };
+        
+        tagDiv.appendChild(tagText);
+        tagDiv.appendChild(removeBtn);
+        tagsList.appendChild(tagDiv);
+    });
+}
+
+// 更新标签过滤器
+function updateTagFilter() {
+    const filterContainer = document.getElementById('tag-filter');
+    filterContainer.innerHTML = '';
+    
+    // 收集所有唯一的标签
+    const allTags = new Set();
+    videoList.forEach(video => {
+        if (video.tags) {
+            video.tags.forEach(tag => allTags.add(tag));
+        }
+    });
+    
+    // 创建标签过滤器项
+    allTags.forEach(tag => {
+        const tagItem = document.createElement('div');
+        tagItem.className = 'tag-filter-item';
+        if (activeTagFilters.includes(tag)) {
+            tagItem.classList.add('active');
+        }
+        tagItem.textContent = tag;
+        tagItem.onclick = () => {
+            tagItem.classList.toggle('active');
+            // 更新活动标签过滤器列表
+            activeTagFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
+                .map(item => item.textContent);
+            // 保存标签过滤器状态
+            ipcRenderer.send('save-tag-filters', activeTagFilters);
+            updateVideoList(true); // 保持当前顺序，只过滤标签
+        };
+        filterContainer.appendChild(tagItem);
+    });
+}
+
+// 标签分类定义
+const tagCategories = {
+    type: {
+        title: '类型',
+        defaultExpanded: true
+    },
+    content: {
+        title: '内容',
+        defaultExpanded: true
+    },
+    quality: {
+        title: '质量',
+        defaultExpanded: false
+    },
+    status: {
+        title: '状态',
+        defaultExpanded: false
+    },
+    other: {
+        title: '其他',
+        defaultExpanded: false
+    }
+};
+
+// 更新快速标签选择对话框
+function updateQuickTagsModal() {
+    const tagsList = document.getElementById('quick-tags-list');
+    tagsList.innerHTML = '';
+    
+    // 收集所有唯一的标���
+    const allTags = new Set();
+    videoList.forEach(video => {
+        if (video.tags) {
+            video.tags.forEach(tag => allTags.add(tag));
+        }
+    });
+    
+    // 获取当前视频的标签
+    const currentVideo = videoList.find(v => v.id === currentVideoId);
+    const currentTags = currentVideo ? currentVideo.tags || [] : [];
+    
+    // 按分类组织标签
+    const categorizedTags = {};
+    Object.keys(tagCategories).forEach(category => {
+        categorizedTags[category] = [];
+    });
+    
+    // 创建分类容器
+    Object.entries(tagCategories).forEach(([category, config]) => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = `tag-category${config.defaultExpanded ? '' : ' collapsed'}`;
+        categoryDiv.dataset.category = category;
+        
+        const header = document.createElement('div');
+        header.className = 'tag-category-header';
+        header.innerHTML = `
+            <span class="tag-category-title">${config.title}</span>
+            <span class="tag-category-arrow">▼</span>
+        `;
+        header.onclick = () => {
+            categoryDiv.classList.toggle('collapsed');
+        };
+        
+        const content = document.createElement('div');
+        content.className = 'tag-category-content';
+        
+        categoryDiv.appendChild(header);
+        categoryDiv.appendChild(content);
+        tagsList.appendChild(categoryDiv);
+    });
+    
+    // 创建标签选项并添加到相应的分类中
+    allTags.forEach(tag => {
+        const container = document.createElement('div');
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `tag-${tag}`;
+        checkbox.className = 'quick-tag-checkbox';
+        checkbox.checked = currentTags.includes(tag);
+        
+        const label = document.createElement('label');
+        label.htmlFor = `tag-${tag}`;
+        label.className = 'quick-tag-label';
+        label.textContent = tag;
+        
+        container.appendChild(checkbox);
+        container.appendChild(label);
+        
+        // 获取标签的分类（从标签数据中获取或默认为"其他"）
+        const tagData = videoList.find(v => v.tags && v.tags.includes(tag));
+        const category = (tagData && tagData.tagCategories && tagData.tagCategories[tag]) || 'other';
+        
+        // 将标签添加到相应的分类容器中
+        const categoryContent = document.querySelector(`.tag-category[data-category="${category}"] .tag-category-content`);
+        if (categoryContent) {
+            categoryContent.appendChild(container);
+        }
+    });
+}
+
+// ��始化标签输入功能
+function initializeTagInput() {
+    const input = document.getElementById('add-tag-input');
+    const categorySelect = document.getElementById('tag-category-select');
+    
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && input.value.trim() && currentVideoId) {
+            const tag = input.value.trim();
+            const category = categorySelect.value || 'other';
+            
+            ipcRenderer.send('add-tag', {
+                videoId: currentVideoId,
+                tag: tag,
+                category: category
+            });
+            
+            input.value = '';
+            categorySelect.value = '';
+        }
+    });
+}
+
+// 初始化快速标签功能
+function initializeQuickTags() {
+    const modal = document.getElementById('quick-tags-modal');
+    const button = document.getElementById('quick-tags-button');
+    const closeBtn = document.getElementById('quick-tags-close');
+    const cancelBtn = document.getElementById('quick-tags-cancel');
+    const applyBtn = document.getElementById('quick-tags-apply');
+    
+    // 显示对话框
+    button.onclick = () => {
+        if (currentVideoId) {
+            modal.classList.add('show');
+            updateQuickTagsModal();
+        }
+    };
+    
+    // 关闭对话框的各种方式
+    const closeModal = () => modal.classList.remove('show');
+    
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+    
+    // 点击对话框外部关闭
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    };
+    
+    // 应用选中的标签
+    applyBtn.onclick = () => {
+        if (currentVideoId) {
+            const selectedTags = Array.from(document.querySelectorAll('.quick-tag-checkbox:checked'))
+                .map(checkbox => checkbox.id.replace('tag-', ''));
+            
+            // 获取当前视频的标签
+            const currentVideo = videoList.find(v => v.id === currentVideoId);
+            const currentTags = currentVideo ? currentVideo.tags || [] : [];
+            
+            // 添加新选中的标签
+            selectedTags.forEach(tag => {
+                if (!currentTags.includes(tag)) {
+                    ipcRenderer.send('add-tag', {
+                        videoId: currentVideoId,
+                        tag: tag
+                    });
+                }
+            });
+            
+            // 移除未选中的标签
+            currentTags.forEach(tag => {
+                if (!selectedTags.includes(tag)) {
+                    ipcRenderer.send('remove-tag', {
+                        videoId: currentVideoId,
+                        tag: tag
+                    });
+                }
+            });
+            
+            closeModal();
+        }
+    };
+}
+
+// 初始化标签管理功能
+function initializeTagManager() {
+    const modal = document.getElementById('tag-manager-modal');
+    const manageButton = document.getElementById('manage-tags');
+    const closeBtn = document.getElementById('tag-manager-close');
+    const cancelBtn = document.getElementById('tag-manager-cancel');
+    
+    // 显示对话框
+    manageButton.onclick = () => {
+        modal.classList.add('show');
+        updateTagManagerList();
+    };
+    
+    // 关闭对话框的各种方式
+    const closeModal = () => modal.classList.remove('show');
+    
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+    
+    // 点击对话框外部关闭
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    };
+}
+
+// 更新标签管理列表
+function updateTagManagerList() {
+    const container = document.getElementById('tag-manager-list');
+    container.innerHTML = '';
+    
+    // 收集所有标签信息
+    const tagInfo = new Map(); // 存储标签使用次数和分类信息
+    videoList.forEach(video => {
+        if (video.tags) {
+            video.tags.forEach(tag => {
+                if (!tagInfo.has(tag)) {
+                    tagInfo.set(tag, {
+                        count: 1,
+                        category: (video.tagCategories && video.tagCategories[tag]) || 'other'
+                    });
+                } else {
+                    tagInfo.get(tag).count++;
+                }
+            });
+        }
+    });
+    
+    // 按标签名称排序
+    const sortedTags = Array.from(tagInfo.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    
+    // 创建标签列表
+    sortedTags.forEach(([tag, info]) => {
+        const item = document.createElement('div');
+        item.className = 'tag-manager-item';
+        
+        const name = document.createElement('div');
+        name.className = 'tag-manager-name';
+        name.textContent = tag;
+        
+        const category = document.createElement('select');
+        category.className = 'tag-manager-category';
+        Object.entries(tagCategories).forEach(([value, { title }]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = title;
+            option.selected = value === info.category;
+            category.appendChild(option);
+        });
+        
+        // 当分类改变时更新所有使用该标签的视频
+        category.onchange = () => {
+            const newCategory = category.value;
+            videoList.forEach(video => {
+                if (video.tags && video.tags.includes(tag)) {
+                    if (!video.tagCategories) {
+                        video.tagCategories = {};
+                    }
+                    video.tagCategories[tag] = newCategory;
+                    
+                    // 通知主进程更新标签分类
+                    ipcRenderer.send('update-tag-category', {
+                        videoId: video.id,
+                        tag: tag,
+                        category: newCategory
+                    });
+                }
+            });
+        };
+        
+        const count = document.createElement('div');
+        count.className = 'tag-manager-count';
+        count.textContent = `${info.count}个视频`;
+        
+        item.appendChild(name);
+        item.appendChild(category);
+        item.appendChild(count);
+        container.appendChild(item);
+    });
+}
+
+// 在文档加载完成后初始化所有功能
+document.addEventListener('DOMContentLoaded', () => {
+    initializePlayerRating();
+    initializeTagInput();
+    initializeQuickTags();
+    initializeTagManager();
+    // 请求保存的标签过滤器状态
+    ipcRenderer.send('request-tag-filters');
+});
+
+// 接收保存的标签过滤器状态
+ipcRenderer.on('tag-filters-loaded', (event, filters) => {
+    activeTagFilters = filters || [];
+    updateTagFilter();
+    updateVideoList(true);
+});
+
 // 更新视频列表显示
 function updateVideoList(maintainOrder = false) {
     const container = document.getElementById('video-list');
@@ -145,24 +626,35 @@ function updateVideoList(maintainOrder = false) {
         return;
     }
     
-    // 在初始加载时进行排序
-    if (!maintainOrder) {
-        videoList.sort((a, b) => {
-            if (a.isNew !== b.isNew) {
-                return b.isNew - a.isNew; // 新视频排在前面
-            }
-            return a.filename.localeCompare(b.filename);
-        });
+    // 获取当前排序方式
+    const sortType = document.getElementById('sort-type').value;
+    
+    // 获取选中的标签过滤器
+    const activeFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
+        .map(item => item.textContent);
+    
+    // 过滤和排序视频列表
+    let filteredVideos = videoList;
+    if (activeFilters.length > 0) {
+        filteredVideos = videoList.filter(video => 
+            activeFilters.every(tag => video.tags && video.tags.includes(tag))
+        );
     }
     
-    videoList.forEach(video => {
+    if (!maintainOrder) {
+        filteredVideos = sortVideoList(filteredVideos, sortType);
+    }
+    
+    filteredVideos.forEach(video => {
         const videoItem = document.createElement('div');
         videoItem.className = 'video-item' + (video.isNew ? ' new-video' : '') + (video.watched ? ' watched' : '');
-        videoItem.setAttribute('data-video-id', video.id); // 添加视频ID属性
+        videoItem.setAttribute('data-video-id', video.id);
         
         const title = document.createElement('div');
         title.className = 'video-item-title';
         title.textContent = path.basename(video.path) + (video.isNew ? ' (新)' : '');
+        
+        const rating = createRatingStars(video.rating);
         
         const info = document.createElement('div');
         info.className = 'video-item-info';
@@ -187,7 +679,12 @@ function updateVideoList(maintainOrder = false) {
         info.textContent = infoText;
         
         videoItem.appendChild(title);
+        videoItem.appendChild(rating);
         videoItem.appendChild(info);
+        
+        // 添加标签显示
+        const tags = createVideoTags(video.tags);
+        videoItem.appendChild(tags);
         
         videoItem.onclick = () => {
             document.querySelectorAll('.video-item').forEach(item => {
@@ -196,24 +693,68 @@ function updateVideoList(maintainOrder = false) {
             
             videoItem.classList.add('active');
             
-            currentVideoId = video.id;
-            videoPlayer.src = video.path;
-            videoPlayer.currentTime = video.watchTime || 0; // 从上次播放位置继续
-            videoPlayer.play();
+            // 在切换视频前保存当前视频的播放进度
+            if (currentVideoId) {
+                const currentVideo = videoList.find(v => v.id === currentVideoId);
+                if (currentVideo) {
+                    currentVideo.watchTime = videoPlayer.currentTime;
+                    // 发送最后的播放进度
+                    ipcRenderer.send('update-video-progress', {
+                        videoId: currentVideoId,
+                        currentTime: videoPlayer.currentTime,
+                        duration: videoPlayer.duration
+                    });
+                }
+            }
             
+            // 切换到视频
+            currentVideoId = video.id;
+            const wasPlaying = !videoPlayer.paused;
+            const oldSrc = videoPlayer.src;
+            videoPlayer.src = video.path;
+            
+            // 检查是否应该从头开始播放
+            const isVideoFinished = video.watchTime >= (video.duration * 0.98); // 如果播放进度超过98%，认为已完成
+            if (isVideoFinished) {
+                videoPlayer.currentTime = 0; // 从头开始播放
+            } else {
+                videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
+            }
+            
+            // 如果之前在播放，或者这是新选择的视频，就自动播放
+            if (wasPlaying || oldSrc !== video.path) {
+                const playPromise = videoPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.error('Play failed:', e);
+                        // 如果播放失败，添加一次性点击事件
+                        videoPlayer.addEventListener('click', () => {
+                            videoPlayer.play();
+                        }, { once: true });
+                    });
+                }
+            }
+            
+            // 更新当前播放信息、评分和标签显示
             document.getElementById('current-video-info').textContent = 
                 `正在播放: ${path.basename(video.path)} (${relativePath})`;
+            updatePlayerRating(video.rating);
+            updatePlayerTags(video.tags || []);
         };
         
         container.appendChild(videoItem);
     });
 }
 
+// 添加排序变化监听
+document.getElementById('sort-type').addEventListener('change', () => {
+    updateVideoList(false);
+});
+
 // 更新单个视频的状态
 function updateVideoState(videoId, updates) {
     const videoItem = document.querySelector(`.video-item[data-video-id="${videoId}"]`);
     if (videoItem) {
-        // 更新视频列表中的对应项
         const videoIndex = videoList.findIndex(v => v.id === videoId);
         if (videoIndex !== -1) {
             Object.assign(videoList[videoIndex], updates);
@@ -224,6 +765,21 @@ function updateVideoState(videoId, updates) {
                 videoItem.classList.remove('new-video');
                 const title = videoItem.querySelector('.video-item-title');
                 title.textContent = title.textContent.replace(' (新)', '');
+            }
+
+            // 更新评分显示（列表和播放器）
+            if (updates.rating !== undefined) {
+                // 更新列表的评分显示
+                const oldRating = videoItem.querySelector('.video-item-rating');
+                if (oldRating) {
+                    const newRating = createRatingStars(updates.rating);
+                    oldRating.replaceWith(newRating);
+                }
+                
+                // 如果是当前播放的视频，更新播放器评分
+                if (videoId === currentVideoId) {
+                    updatePlayerRating(updates.rating);
+                }
             }
 
             // 更新播放次数显示
@@ -248,6 +804,24 @@ function updateVideoState(videoId, updates) {
                 }
             }
             info.textContent = infoText;
+
+            // 更新标签显示
+            if (updates.tags !== undefined) {
+                // 更新列表中的标签显示
+                const oldTags = videoItem.querySelector('.video-tags');
+                if (oldTags) {
+                    const newTags = createVideoTags(updates.tags);
+                    oldTags.replaceWith(newTags);
+                }
+                
+                // 如果是当前播放的视频，更新播放器标签
+                if (videoId === currentVideoId) {
+                    updatePlayerTags(updates.tags);
+                }
+                
+                // 更新标签过滤器
+                updateTagFilter();
+            }
         }
     }
 }
@@ -267,9 +841,10 @@ ipcRenderer.on('folder-selected', (event, folderPath) => {
 // 接收视频列表更新
 ipcRenderer.on('update-video-list', (event, videos) => {
     videoList = videos;
-    // 初始加载时进行排序
     updateVideoList(false);
     hideLoading();
+    // 更新快速标签下拉菜单
+    updateQuickTagsDropdown();
 });
 
 // 接收视频状态更新

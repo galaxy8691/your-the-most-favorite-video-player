@@ -26,12 +26,19 @@ function getVideoId(filePath) {
 // 保存所有设置
 function saveSettings() {
     try {
+        // 获取标签过滤器状态，确保在窗口被销毁时不会出错
+        let activeTagFilters = [];
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            activeTagFilters = mainWindow.webContents.activeTagFilters || [];
+        }
+
         const settings = {
             watchFolders: Array.from(watchFolders),
             videoHistory: Array.from(videoHistory.entries()).reduce((obj, [key, value]) => {
                 obj[key] = value;
                 return obj;
             }, {}),
+            activeTagFilters: activeTagFilters,
             lastUpdated: new Date().toISOString()
         };
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf8' });
@@ -160,7 +167,9 @@ async function scanVideoFiles() {
                             lastPlayed: null,
                             firstSeen: new Date().toISOString(),
                             playCount: 0,
-                            significantPlays: 0
+                            significantPlays: 0,
+                            rating: 0,
+                            tags: []
                         };
 
                         // 如果视频没有时长信息，尝试获取
@@ -202,7 +211,9 @@ async function scanVideoFiles() {
                             firstSeen: videoInfo.firstSeen,
                             isNew: !videoInfo.watched,
                             playCount: videoInfo.playCount,
-                            significantPlays: videoInfo.significantPlays
+                            significantPlays: videoInfo.significantPlays,
+                            rating: videoInfo.rating,
+                            tags: videoInfo.tags || []
                         });
                     }
                 }
@@ -277,6 +288,25 @@ app.whenReady().then(() => {
         });
     }
 
+    // 处理标签过滤器状态请求
+    ipcMain.on('request-tag-filters', (event) => {
+        try {
+            const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+            event.reply('tag-filters-loaded', settings.activeTagFilters || []);
+        } catch (err) {
+            console.error('Error loading tag filters:', err);
+            event.reply('tag-filters-loaded', []);
+        }
+    });
+
+    // 保存标签过滤器状态
+    ipcMain.on('save-tag-filters', (event, filters) => {
+        if (mainWindow) {
+            mainWindow.webContents.activeTagFilters = filters;
+            saveSettings();
+        }
+    });
+
     // 处理视频播放进度更新
     ipcMain.on('update-video-progress', (event, { videoId, currentTime, duration }) => {
         const videoInfo = videoHistory.get(videoId) || {
@@ -287,7 +317,8 @@ app.whenReady().then(() => {
             firstSeen: new Date().toISOString(),
             playCount: 0,
             significantPlays: 0,
-            recentPlayCounted: false  // 添加标记，记录本次播放是否已计数
+            recentPlayCounted: false,  // 添加标记，记录本次播放是否已计数
+            rating: 0
         };
 
         // 更新最长播放时间
@@ -298,7 +329,7 @@ app.whenReady().then(() => {
         // 检查是否需要增加播放次数（播放超过2分钟或播放完成90%以上）
         if (!videoInfo.recentPlayCounted && 
             ((currentTime >= 120) || (duration > 0 && currentTime >= duration * 0.9))) {
-            if (videoInfo.watched) {  // 只有已观看的视频才增加播放次数
+            if (videoInfo.watched) {  // 只有已观看的视频增加播放次数
                 videoInfo.playCount++;
                 videoInfo.recentPlayCounted = true;  // 标记本次播放已计数
                 
@@ -393,6 +424,98 @@ app.whenReady().then(() => {
         setupWatcher();
         updateVideoList();
         saveSettings();
+    });
+
+    // 处理视频评分更新
+    ipcMain.on('update-video-rating', (event, { videoId, rating }) => {
+        const videoInfo = videoHistory.get(videoId);
+        if (videoInfo) {
+            videoInfo.rating = rating;
+            videoHistory.set(videoId, videoInfo);
+            saveSettings();
+
+            // 通知渲染进程更新评分
+            mainWindow.webContents.send('video-state-updated', {
+                videoId,
+                updates: {
+                    rating: rating
+                }
+            });
+        }
+    });
+
+    // 处理添加标签
+    ipcMain.on('add-tag', (event, { videoId, tag, category }) => {
+        const videoInfo = videoHistory.get(videoId);
+        if (videoInfo) {
+            if (!videoInfo.tags) {
+                videoInfo.tags = [];
+            }
+            if (!videoInfo.tagCategories) {
+                videoInfo.tagCategories = {};
+            }
+            if (!videoInfo.tags.includes(tag)) {
+                videoInfo.tags.push(tag);
+                videoInfo.tagCategories[tag] = category || 'other';
+                videoHistory.set(videoId, videoInfo);
+                saveSettings();
+
+                // 通知渲染进程更新标签
+                mainWindow.webContents.send('video-state-updated', {
+                    videoId,
+                    updates: {
+                        tags: videoInfo.tags,
+                        tagCategories: videoInfo.tagCategories
+                    }
+                });
+            }
+        }
+    });
+
+    // 处理移除标签
+    ipcMain.on('remove-tag', (event, { videoId, tag }) => {
+        const videoInfo = videoHistory.get(videoId);
+        if (videoInfo && videoInfo.tags) {
+            const index = videoInfo.tags.indexOf(tag);
+            if (index !== -1) {
+                videoInfo.tags.splice(index, 1);
+                if (videoInfo.tagCategories) {
+                    delete videoInfo.tagCategories[tag];
+                }
+                videoHistory.set(videoId, videoInfo);
+                saveSettings();
+
+                // 通知渲染进程更新标签
+                mainWindow.webContents.send('video-state-updated', {
+                    videoId,
+                    updates: {
+                        tags: videoInfo.tags,
+                        tagCategories: videoInfo.tagCategories
+                    }
+                });
+            }
+        }
+    });
+
+    // 处理标签分类更新
+    ipcMain.on('update-tag-category', (event, { videoId, tag, category }) => {
+        const videoInfo = videoHistory.get(videoId);
+        if (videoInfo) {
+            if (!videoInfo.tagCategories) {
+                videoInfo.tagCategories = {};
+            }
+            videoInfo.tagCategories[tag] = category;
+            videoHistory.set(videoId, videoInfo);
+            saveSettings();
+
+            // 通知渲染进程更新标签
+            mainWindow.webContents.send('video-state-updated', {
+                videoId,
+                updates: {
+                    tagCategories: videoInfo.tagCategories
+                }
+            });
+        }
     });
 
     app.on('activate', () => {
