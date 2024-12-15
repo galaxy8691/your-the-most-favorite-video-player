@@ -202,7 +202,7 @@ function initializePlayerRating() {
     });
 }
 
-// 在文档加载完成后初始化评分控件
+// 在文档加载完成后初始化评分控���
 document.addEventListener('DOMContentLoaded', initializePlayerRating);
 
 // 排序视频列表
@@ -273,10 +273,70 @@ function updatePlayerTags(tags = []) {
     });
 }
 
-// 更新标签过滤器
-function updateTagFilter() {
-    const filterContainer = document.getElementById('tag-filter');
-    filterContainer.innerHTML = '';
+// 初始化标签过滤器
+function initializeTagFilter() {
+    const modal = document.getElementById('filter-modal');
+    const filterButton = document.getElementById('filter-button');
+    const closeBtn = document.getElementById('filter-close');
+    const clearBtn = document.getElementById('filter-clear');
+    const applyBtn = document.getElementById('filter-apply');
+    
+    // 显示对话框
+    filterButton.onclick = () => {
+        modal.classList.add('show');
+        updateFilterList();
+    };
+    
+    // 关闭对话框的各种方式
+    const closeModal = () => modal.classList.remove('show');
+    
+    closeBtn.onclick = closeModal;
+    
+    // 点击对话框外部关闭
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    };
+    
+    // 清除所有过滤器
+    clearBtn.onclick = () => {
+        activeTagFilters = [];
+        updateFilterList();
+        updateFilterButton();
+        ipcRenderer.send('save-tag-filters', activeTagFilters);
+        updateVideoList(true);
+    };
+    
+    // 应用过滤器
+    applyBtn.onclick = () => {
+        activeTagFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
+            .map(item => item.textContent);
+        updateFilterButton();
+        ipcRenderer.send('save-tag-filters', activeTagFilters);
+        updateVideoList(true);
+        closeModal();
+    };
+}
+
+// 更新过滤器按钮状态
+function updateFilterButton() {
+    const filterButton = document.getElementById('filter-button');
+    const filterCount = document.getElementById('filter-count');
+    
+    if (activeTagFilters.length > 0) {
+        filterButton.classList.add('active');
+        filterCount.textContent = activeTagFilters.length;
+    } else {
+        filterButton.classList.remove('active');
+        filterCount.textContent = '0';
+    }
+}
+
+// 更新过滤器列表
+function updateFilterList() {
+    const filterList = document.getElementById('filter-list');
+    filterList.innerHTML = '';
     
     // 收集所有唯一的标签
     const allTags = new Set();
@@ -286,29 +346,61 @@ function updateTagFilter() {
         }
     });
     
-    // 创建标签过滤器项
+    // 按分类组织标签
+    const categorizedTags = {};
+    Object.keys(tagCategories).forEach(category => {
+        categorizedTags[category] = [];
+    });
+    
+    // 将标签分类
     allTags.forEach(tag => {
-        const tagItem = document.createElement('div');
-        tagItem.className = 'tag-filter-item';
-        if (activeTagFilters.includes(tag)) {
-            tagItem.classList.add('active');
+        const tagData = videoList.find(v => v.tags && v.tags.includes(tag));
+        const category = (tagData && tagData.tagCategories && tagData.tagCategories[tag]) || 'other';
+        if (!categorizedTags[category]) {
+            categorizedTags[category] = [];
         }
-        tagItem.textContent = tag;
-        tagItem.onclick = () => {
-            tagItem.classList.toggle('active');
-            // 更新活动标签过滤器列表
-            activeTagFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
-                .map(item => item.textContent);
-            // 保存标签过滤器状态
-            ipcRenderer.send('save-tag-filters', activeTagFilters);
-            updateVideoList(true); // 保持当前顺序，只过滤标签
-        };
-        filterContainer.appendChild(tagItem);
+        categorizedTags[category].push(tag);
+    });
+    
+    // 创建分类容器
+    Object.entries(tagCategories).forEach(([category, config]) => {
+        if (categorizedTags[category].length > 0) {
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = 'tag-category';
+            
+            const header = document.createElement('div');
+            header.className = 'tag-category-header';
+            header.innerHTML = `
+                <span class="tag-category-title">${config.title}</span>
+                <span class="tag-category-arrow">▼</span>
+            `;
+            
+            const content = document.createElement('div');
+            content.className = 'tag-category-content';
+            
+            // ��建该分类下的标签
+            categorizedTags[category].sort().forEach(tag => {
+                const tagItem = document.createElement('div');
+                tagItem.className = 'tag-filter-item';
+                if (activeTagFilters.includes(tag)) {
+                    tagItem.classList.add('active');
+                }
+                tagItem.textContent = tag;
+                tagItem.onclick = () => {
+                    tagItem.classList.toggle('active');
+                };
+                content.appendChild(tagItem);
+            });
+            
+            categoryDiv.appendChild(header);
+            categoryDiv.appendChild(content);
+            filterList.appendChild(categoryDiv);
+        }
     });
 }
 
-// 标签分类定义
-const tagCategories = {
+// 标签分类定义（改为从设置中加载）
+let tagCategories = {
     type: {
         title: '类型',
         defaultExpanded: true
@@ -336,7 +428,7 @@ function updateQuickTagsModal() {
     const tagsList = document.getElementById('quick-tags-list');
     tagsList.innerHTML = '';
     
-    // 收集所有唯一的标���
+    // 收集所有唯一的标签
     const allTags = new Set();
     videoList.forEach(video => {
         if (video.tags) {
@@ -408,7 +500,7 @@ function updateQuickTagsModal() {
     });
 }
 
-// ��始化标签输入功能
+// 初始化标签输入功能
 function initializeTagInput() {
     const input = document.getElementById('add-tag-input');
     const categorySelect = document.getElementById('tag-category-select');
@@ -500,6 +592,44 @@ function initializeTagManager() {
     const manageButton = document.getElementById('manage-tags');
     const closeBtn = document.getElementById('tag-manager-close');
     const cancelBtn = document.getElementById('tag-manager-cancel');
+    const tabs = document.querySelectorAll('.tag-manager-tab');
+    const addCategoryBtn = document.getElementById('add-category-btn');
+    const newCategoryInput = document.getElementById('new-category-input');
+    
+    // 标签页切换
+    tabs.forEach(tab => {
+        tab.onclick = () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const panels = document.querySelectorAll('.tag-manager-panel');
+            panels.forEach(p => p.classList.remove('active'));
+            document.getElementById(`${tab.dataset.tab}-panel`).classList.add('active');
+            
+            if (tab.dataset.tab === 'tags') {
+                updateTagManagerList();
+            } else if (tab.dataset.tab === 'categories') {
+                updateCategoryManager();
+            }
+        };
+    });
+    
+    // 添加新分类
+    addCategoryBtn.onclick = () => {
+        const name = newCategoryInput.value.trim();
+        if (name) {
+            const key = name.toLowerCase().replace(/\s+/g, '-');
+            if (!tagCategories[key]) {
+                tagCategories[key] = {
+                    title: name,
+                    defaultExpanded: false
+                };
+                ipcRenderer.send('save-tag-categories', tagCategories);
+                updateCategoryManager();
+                newCategoryInput.value = '';
+            }
+        }
+    };
     
     // 显示对话框
     manageButton.onclick = () => {
@@ -519,6 +649,64 @@ function initializeTagManager() {
             closeModal();
         }
     };
+}
+
+// 更新分类管理界面
+function updateCategoryManager() {
+    const container = document.getElementById('category-manager');
+    container.innerHTML = '';
+    
+    Object.entries(tagCategories).forEach(([key, category]) => {
+        const item = document.createElement('div');
+        item.className = 'category-item';
+        
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'category-name';
+        nameInput.value = category.title;
+        nameInput.onchange = () => {
+            category.title = nameInput.value;
+            ipcRenderer.send('save-tag-categories', tagCategories);
+        };
+        
+        const actions = document.createElement('div');
+        actions.className = 'category-actions';
+        
+        // 不允许删除"其他"分类
+        if (key !== 'other') {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '删除';
+            deleteBtn.className = 'remove-folder';
+            deleteBtn.onclick = () => {
+                if (confirm(`确定要删除分类"${category.title}"吗？所有使用此分类的标签将移至"其他"分类。`)) {
+                    // 将该分类下的所有标签移到"其他"分类
+                    videoList.forEach(video => {
+                        if (video.tagCategories) {
+                            Object.entries(video.tagCategories).forEach(([tag, cat]) => {
+                                if (cat === key) {
+                                    video.tagCategories[tag] = 'other';
+                                    ipcRenderer.send('update-tag-category', {
+                                        videoId: video.id,
+                                        tag: tag,
+                                        category: 'other'
+                                    });
+                                }
+                            });
+                        }
+                    });
+                    
+                    delete tagCategories[key];
+                    ipcRenderer.send('save-tag-categories', tagCategories);
+                    updateCategoryManager();
+                }
+            };
+            actions.appendChild(deleteBtn);
+        }
+        
+        item.appendChild(nameInput);
+        item.appendChild(actions);
+        container.appendChild(item);
+    });
 }
 
 // 更新标签管理列表
@@ -596,12 +784,41 @@ function updateTagManagerList() {
     });
 }
 
+// 初始化文件夹管理器
+function initializeFolderManager() {
+    const modal = document.getElementById('folder-manager-modal');
+    const manageButton = document.getElementById('manage-folders');
+    const closeBtn = document.getElementById('folder-manager-close');
+    const cancelBtn = document.getElementById('folder-manager-cancel');
+    
+    // 显示对话框
+    manageButton.onclick = () => {
+        modal.classList.add('show');
+        updateFolderList();
+    };
+    
+    // 关闭对话框的各种方式
+    const closeModal = () => modal.classList.remove('show');
+    
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+    
+    // 点击对话框外部关闭
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    };
+}
+
 // 在文档加载完成后初始化所有功能
 document.addEventListener('DOMContentLoaded', () => {
     initializePlayerRating();
     initializeTagInput();
     initializeQuickTags();
     initializeTagManager();
+    initializeTagFilter();
+    initializeFolderManager();
     // 请求保存的标签过滤器状态
     ipcRenderer.send('request-tag-filters');
 });
@@ -609,7 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // 接收保存的标签过滤器状态
 ipcRenderer.on('tag-filters-loaded', (event, filters) => {
     activeTagFilters = filters || [];
-    updateTagFilter();
+    updateFilterButton();
     updateVideoList(true);
 });
 
@@ -633,7 +850,7 @@ function updateVideoList(maintainOrder = false) {
     const activeFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
         .map(item => item.textContent);
     
-    // 过滤和排序视频列表
+    // 过滤和序视频列表
     let filteredVideos = videoList;
     if (activeFilters.length > 0) {
         filteredVideos = videoList.filter(video => 
@@ -698,7 +915,7 @@ function updateVideoList(maintainOrder = false) {
                 const currentVideo = videoList.find(v => v.id === currentVideoId);
                 if (currentVideo) {
                     currentVideo.watchTime = videoPlayer.currentTime;
-                    // 发送最后的播放进度
+                    // 发送最后的放进度
                     ipcRenderer.send('update-video-progress', {
                         videoId: currentVideoId,
                         currentTime: videoPlayer.currentTime,
@@ -727,7 +944,7 @@ function updateVideoList(maintainOrder = false) {
                 if (playPromise !== undefined) {
                     playPromise.catch(e => {
                         console.error('Play failed:', e);
-                        // 如果播放失败，添加一次性点击事件
+                        // 如果放失败，添加一次性点击事件
                         videoPlayer.addEventListener('click', () => {
                             videoPlayer.play();
                         }, { once: true });
@@ -856,4 +1073,12 @@ ipcRenderer.on('video-state-updated', (event, { videoId, updates }) => {
 ipcRenderer.on('scan-progress', (event, { current, total, currentFile }) => {
     const progress = document.querySelector('.loading-progress');
     progress.textContent = `正在处理: ${current} / ${total}\n${path.basename(currentFile)}`;
+});
+
+// 接收标签分类更新
+ipcRenderer.on('tag-categories-loaded', (event, categories) => {
+    tagCategories = categories;
+    updateTagManagerList();
+    updateQuickTagsModal();
+    updateFilterList();
 }); 

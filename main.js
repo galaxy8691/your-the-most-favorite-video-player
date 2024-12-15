@@ -16,6 +16,34 @@ const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.wmv'];
 // 统一的设置文件路径
 const settingsPath = path.join(__dirname, 'settings.json');
 
+// 默认标签分类
+const defaultTagCategories = {
+    type: {
+        title: '类型',
+        defaultExpanded: true
+    },
+    actor: {
+        title: '演员',
+        defaultExpanded: true
+    },
+    content: {
+        title: '内容',
+        defaultExpanded: true
+    },
+    quality: {
+        title: '质量',
+        defaultExpanded: false
+    },
+    status: {
+        title: '状态',
+        defaultExpanded: false
+    },
+    other: {
+        title: '其他',
+        defaultExpanded: false
+    }
+};
+
 // 计算文件的唯一标识
 function getVideoId(filePath) {
     const stats = fs.statSync(filePath);
@@ -39,6 +67,7 @@ function saveSettings() {
                 return obj;
             }, {}),
             activeTagFilters: activeTagFilters,
+            tagCategories: mainWindow ? mainWindow.tagCategories : defaultTagCategories,
             lastUpdated: new Date().toISOString()
         };
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf8' });
@@ -51,13 +80,19 @@ function saveSettings() {
 // 加载所有设置
 function loadSettings() {
     try {
+        let settings = {
+            watchFolders: [],
+            videoHistory: {},
+            tagCategories: defaultTagCategories
+        };
+
         if (fs.existsSync(settingsPath)) {
             console.log('Loading settings from:', settingsPath);
-            const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+            const loadedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
             
             // 加载文件夹列表
-            if (Array.isArray(settings.watchFolders)) {
-                settings.watchFolders.forEach(folder => {
+            if (Array.isArray(loadedSettings.watchFolders)) {
+                loadedSettings.watchFolders.forEach(folder => {
                     if (fs.existsSync(folder)) {
                         watchFolders.add(folder);
                     } else {
@@ -67,14 +102,26 @@ function loadSettings() {
             }
 
             // 加载视频历史
-            if (settings.videoHistory) {
-                videoHistory = new Map(Object.entries(settings.videoHistory));
+            if (loadedSettings.videoHistory) {
+                videoHistory = new Map(Object.entries(loadedSettings.videoHistory));
+            }
+
+            // 加载标签分类
+            if (loadedSettings.tagCategories) {
+                settings.tagCategories = loadedSettings.tagCategories;
             }
         } else {
             console.log('No settings file found, will create one when saving');
         }
+
+        return settings;
     } catch (err) {
         console.error('Error loading settings:', err);
+        return {
+            watchFolders: [],
+            videoHistory: {},
+            tagCategories: defaultTagCategories
+        };
     }
 }
 
@@ -277,9 +324,17 @@ async function updateVideoList() {
 }
 
 app.whenReady().then(() => {
-    loadSettings();
-    
+    // 先创建窗口
     mainWindow = createWindow();
+    
+    // 加载设置并应用到窗口
+    const settings = loadSettings();
+    mainWindow.tagCategories = settings.tagCategories;
+
+    // 发送标签分类到渲染进程
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.send('tag-categories-loaded', mainWindow.tagCategories);
+    });
 
     if (watchFolders.size > 0) {
         setupWatcher();
@@ -515,6 +570,20 @@ app.whenReady().then(() => {
                     tagCategories: videoInfo.tagCategories
                 }
             });
+        }
+    });
+
+    // 处理标签分类保存
+    ipcMain.on('save-tag-categories', (event, categories) => {
+        if (mainWindow) {
+            // 确保保留"其他"分类
+            if (!categories.other) {
+                categories.other = defaultTagCategories.other;
+            }
+            mainWindow.tagCategories = categories;
+            saveSettings();
+            // 通知所有渲染进程更新标签分类
+            mainWindow.webContents.send('tag-categories-loaded', categories);
         }
     });
 

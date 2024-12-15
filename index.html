@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>视频媒体管理器</title>
+    <title>YTMFVP - Your The Most Favorite Video Player</title>
     <style>
         * {
             margin: 0;
@@ -659,7 +659,7 @@
             background: #2a2a2a;
             border-radius: 8px;
             padding: 20px;
-            width: 600px;
+            width: 800px;
             max-width: 90%;
             max-height: 80vh;
             display: flex;
@@ -673,6 +673,99 @@
             align-items: center;
             padding-bottom: 10px;
             border-bottom: 1px solid #444;
+        }
+
+        .tag-manager-tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .tag-manager-tab {
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+        }
+
+        .tag-manager-tab.active {
+            background: #4CAF50;
+        }
+
+        .tag-manager-panel {
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            flex: 1;
+            overflow: auto;
+        }
+
+        .tag-manager-panel.active {
+            display: flex;
+        }
+
+        .category-manager {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .category-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            background: #333;
+            border-radius: 4px;
+        }
+
+        .category-name {
+            flex: 1;
+            padding: 5px 10px;
+            background: #444;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+        }
+
+        .category-name:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .category-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .category-actions button {
+            padding: 5px 10px;
+            margin: 0;
+        }
+
+        .add-category {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+        }
+
+        .add-category input {
+            flex: 1;
+            padding: 5px 10px;
+            background: #444;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+        }
+
+        .add-category input:focus {
+            outline: none;
+            border-color: #4CAF50;
         }
 
         .tag-manager-list {
@@ -706,6 +799,150 @@
             text-align: right;
             color: #888;
         }
+
+        .filter-button {
+            background: #444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filter-button:hover {
+            background: #555;
+        }
+
+        .filter-button.active {
+            background: #4CAF50;
+        }
+
+        .filter-count {
+            background: #666;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .filter-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .filter-modal.show {
+            display: flex;
+        }
+
+        .filter-content {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            width: 500px;
+            max-width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #444;
+        }
+
+        .filter-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 0;
+            max-height: 400px;
+        }
+
+        .filter-actions {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+
+        .filter-clear {
+            background: #666;
+            color: white;
+        }
+
+        .folder-manager-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .folder-manager-modal.show {
+            display: flex;
+        }
+
+        .folder-manager-content {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            width: 600px;
+            max-width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .folder-manager-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #444;
+        }
+
+        .folder-manager-list {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+
+        .folder-manager-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+
+        .manage-folders-button {
+            width: 100%;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -717,10 +954,7 @@
     <div class="container">
         <div class="sidebar">
             <div class="folder-list">
-                <button id="add-folder">添加文件夹</button>
-                <div id="folder-container">
-                    <!-- 文件夹列表将在这里动态生成 -->
-                </div>
+                <button id="manage-folders" class="manage-folders-button">管理文件夹</button>
             </div>
             <div class="sort-controls">
                 <select id="sort-type">
@@ -729,9 +963,10 @@
                     <option value="name">按名称排序</option>
                 </select>
                 <button id="manage-tags" class="manage-tags-button">管理标签</button>
-                <div class="tag-filter" id="tag-filter">
-                    <!-- 标签过滤器将在这里动态生成 -->
-                </div>
+                <button id="filter-button" class="filter-button">
+                    <span>标签过滤</span>
+                    <span class="filter-count" id="filter-count"></span>
+                </button>
             </div>
             <div class="video-list" id="video-list">
                 <!-- 视频列表将在这里动态生成 -->
@@ -739,7 +974,7 @@
             </div>
         </div>
         <div class="main-content">
-            <h1>视频媒体管理器</h1>
+            <h1>YTMFVP - Your The Most Favorite Video Player</h1>
             <div class="video-container">
                 <video id="video-player" controls
                     controlsList="nodownload" 
@@ -808,11 +1043,58 @@
                 <h3>标签管理</h3>
                 <button class="quick-tags-close" id="tag-manager-close">&times;</button>
             </div>
-            <div class="tag-manager-list" id="tag-manager-list">
-                <!-- 标签列表将在这里动态生成 -->
+            <div class="tag-manager-tabs">
+                <div class="tag-manager-tab active" data-tab="tags">标签列表</div>
+                <div class="tag-manager-tab" data-tab="categories">分类管理</div>
+            </div>
+            <div class="tag-manager-panel active" id="tags-panel">
+                <div class="tag-manager-list" id="tag-manager-list">
+                    <!-- 标签列表将在这里动态生成 -->
+                </div>
+            </div>
+            <div class="tag-manager-panel" id="categories-panel">
+                <div class="category-manager" id="category-manager">
+                    <!-- 分类列表将在这里动���生成 -->
+                </div>
+                <div class="add-category">
+                    <input type="text" id="new-category-input" placeholder="输入新分类名称">
+                    <button id="add-category-btn">添加分类</button>
+                </div>
             </div>
             <div class="quick-tags-actions">
                 <button class="quick-tags-cancel" id="tag-manager-cancel">关闭</button>
+            </div>
+        </div>
+    </div>
+    <div class="filter-modal" id="filter-modal">
+        <div class="filter-content">
+            <div class="filter-header">
+                <h3>标签过滤</h3>
+                <button class="quick-tags-close" id="filter-close">&times;</button>
+            </div>
+            <div class="filter-list" id="filter-list">
+                <!-- 标签过滤器将在这里动态生成 -->
+            </div>
+            <div class="filter-actions">
+                <button class="quick-tags-cancel filter-clear" id="filter-clear">清除过滤</button>
+                <button class="quick-tags-apply" id="filter-apply">应用</button>
+            </div>
+        </div>
+    </div>
+    <div class="folder-manager-modal" id="folder-manager-modal">
+        <div class="folder-manager-content">
+            <div class="folder-manager-header">
+                <h3>文件夹管理</h3>
+                <button class="quick-tags-close" id="folder-manager-close">&times;</button>
+            </div>
+            <div class="folder-manager-list">
+                <button id="add-folder">添加文件夹</button>
+                <div id="folder-container">
+                    <!-- Folder list will be generated here -->
+                </div>
+            </div>
+            <div class="folder-manager-actions">
+                <button class="quick-tags-cancel" id="folder-manager-cancel">关闭</button>
             </div>
         </div>
     </div>
