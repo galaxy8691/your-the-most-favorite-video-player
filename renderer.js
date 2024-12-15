@@ -74,7 +74,7 @@ function playNextVideo() {
         } while (videoItems.length > 1 && randomIndex === currentIndex);
         nextItem = videoItems[randomIndex];
     } else {
-        // 顺序模式：选择下一个视频，如果是��后一个则循环到第一个
+        // 顺序模式：选择下一个视频，如果是后一个则循环到第一个
         const nextIndex = (currentIndex + 1) % videoItems.length;
         nextItem = videoItems[nextIndex];
     }
@@ -108,7 +108,7 @@ function playPrevVideo() {
         prevItem = videoItems[prevIndex];
     }
 
-    // 触发点击事件来播放上一个视频
+    // 触发点击事件来播放上一个视��
     if (prevItem) {
         prevItem.click();
     }
@@ -398,7 +398,7 @@ function initializeTagFilter() {
         updateFilterList();
     };
     
-    // 关闭对话框的各��方式
+    // 关闭对话框的各种方式
     const closeModal = () => modal.classList.remove('show');
     
     closeBtn.onclick = closeModal;
@@ -936,6 +936,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('prev-video').addEventListener('click', playPrevVideo);
     document.getElementById('next-video').addEventListener('click', playNextVideo);
 
+    // 添加键盘快捷键
+    document.addEventListener('keydown', (e) => {
+        // 只在没有输入框获得焦点时响应快捷键
+        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+            switch (e.key) {
+                case 'PageUp':
+                    playPrevVideo();
+                    break;
+                case 'PageDown':
+                    playNextVideo();
+                    break;
+            }
+        }
+    });
+
     // 请求保存的标签过滤器状态
     ipcRenderer.send('request-tag-filters');
 });
@@ -1058,7 +1073,7 @@ function updateVideoList(maintainOrder = false) {
                 videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
             }
             
-            // 如果之前��播放，或者这是新选择的视频，就自动播放
+            // 如果之前播放，或者这是新选择的视频，就自动播放
             if (wasPlaying || oldSrc !== video.path) {
                 const playPromise = videoPlayer.play();
                 if (playPromise !== undefined) {
@@ -1151,7 +1166,7 @@ function updateVideoState(videoId, updates) {
                     oldTags.replaceWith(newTags);
                 }
                 
-                // 如果是当前播放的视频，���新播放器标签
+                // 如果是当前播放的视频，新播放器标签
                 if (videoId === currentVideoId) {
                     updatePlayerTags(updates.tags);
                 }
