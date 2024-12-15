@@ -30,16 +30,23 @@ npm start
 ```
 
 ### 打包发布
+首先确保已安装所有依赖，然后运行相应的打包命令：
+
 ```bash
-# Windows
+# 打包所有平台
+npm run build
+
+# 仅打包 Windows 版本
 npm run build:win
 
-# macOS
+# 仅打包 macOS 版本
 npm run build:mac
 
-# Linux
+# 仅打包 Linux 版本
 npm run build:linux
 ```
+
+打包后的文件将保存在 `dist` 目录中。
 
 ## 主要特性
 

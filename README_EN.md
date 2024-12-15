@@ -30,16 +30,23 @@ npm start
 ```
 
 ### Building for Distribution
+Make sure all dependencies are installed, then run the appropriate build command:
+
 ```bash
-# Windows
+# Build for all platforms
+npm run build
+
+# Build for Windows only
 npm run build:win
 
-# macOS
+# Build for macOS only
 npm run build:mac
 
-# Linux
+# Build for Linux only
 npm run build:linux
 ```
+
+The built files will be saved in the `dist` directory.
 
 ## Key Features
 
