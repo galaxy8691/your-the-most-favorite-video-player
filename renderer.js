@@ -7,6 +7,9 @@ let currentVideoId = null;
 let activeTagFilters = [];
 let randomPlayEnabled = false;
 
+// 全局标签分类映射
+let globalTagMapping = {};
+
 // 加载状态控制
 function showLoading(message) {
     const overlay = document.querySelector('.loading-overlay');
@@ -31,7 +34,7 @@ function showLoading(message) {
     overlay.classList.add('active');
     // 移除阻塞样式
     overlay.style.pointerEvents = 'none';
-    // 只让取消按钮可以点击
+    // 只让取���按钮可以点击
     cancelBtn.style.pointerEvents = 'auto';
 }
 
@@ -215,7 +218,7 @@ videoPlayer.addEventListener('loadedmetadata', async () => {
     // 确保视频可以播放
     videoPlayer.play().catch(e => {
         console.error('Autoplay failed:', e);
-        // 如果自动播放失败，再次尝试播放
+        // 如果自动播放失����再次尝试播放
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(() => {
@@ -338,7 +341,7 @@ function initializePlayerRating() {
 // 在文档加载完成后初始化评分控件
 document.addEventListener('DOMContentLoaded', initializePlayerRating);
 
-// 排序视频列���
+// 排序视频列表
 function sortVideoList(videos, sortType) {
     switch (sortType) {
         case 'rating':
@@ -432,7 +435,7 @@ function initializeTagFilter() {
     
     closeBtn.onclick = closeModal;
     
-    // 点击对话框外部关闭
+    // 点击对话框外部���闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             closeModal();
@@ -494,8 +497,7 @@ function updateFilterList() {
     
     // 将标签分类
     allTags.forEach(tag => {
-        const tagData = videoList.find(v => v.tags && v.tags.includes(tag));
-        const category = (tagData && tagData.tagCategories && tagData.tagCategories[tag]) || 'other';
+        const category = globalTagMapping[tag] || 'other';
         if (!categorizedTags[category]) {
             categorizedTags[category] = [];
         }
@@ -504,7 +506,7 @@ function updateFilterList() {
     
     // 创建分类容器
     Object.entries(tagCategories).forEach(([category, config]) => {
-        if (categorizedTags[category].length > 0) {
+        if (categorizedTags[category] && categorizedTags[category].length > 0) {
             const categoryDiv = document.createElement('div');
             categoryDiv.className = 'tag-category';
             
@@ -518,7 +520,7 @@ function updateFilterList() {
             const content = document.createElement('div');
             content.className = 'tag-category-content';
             
-            // 建该分类下的标签
+            // 按字母顺序排序标签
             categorizedTags[category].sort().forEach(tag => {
                 const tagItem = document.createElement('div');
                 tagItem.className = 'tag-filter-item';
@@ -586,56 +588,58 @@ function updateQuickTagsModal() {
         categorizedTags[category] = [];
     });
     
-    // 创建分类容器
-    Object.entries(tagCategories).forEach(([category, config]) => {
-        const categoryDiv = document.createElement('div');
-        categoryDiv.className = `tag-category${config.defaultExpanded ? '' : ' collapsed'}`;
-        categoryDiv.dataset.category = category;
-        
-        const header = document.createElement('div');
-        header.className = 'tag-category-header';
-        header.innerHTML = `
-            <span class="tag-category-title">${config.title}</span>
-            <span class="tag-category-arrow">▼</span>
-        `;
-        header.onclick = () => {
-            categoryDiv.classList.toggle('collapsed');
-        };
-        
-        const content = document.createElement('div');
-        content.className = 'tag-category-content';
-        
-        categoryDiv.appendChild(header);
-        categoryDiv.appendChild(content);
-        tagsList.appendChild(categoryDiv);
+    // 将标签分类
+    allTags.forEach(tag => {
+        const category = globalTagMapping[tag] || 'other';
+        if (!categorizedTags[category]) {
+            categorizedTags[category] = [];
+        }
+        categorizedTags[category].push(tag);
     });
     
-    // 创建标签选项并添加到相应的分类中
-    allTags.forEach(tag => {
-        const container = document.createElement('div');
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = `tag-${tag}`;
-        checkbox.className = 'quick-tag-checkbox';
-        checkbox.checked = currentTags.includes(tag);
-        
-        const label = document.createElement('label');
-        label.htmlFor = `tag-${tag}`;
-        label.className = 'quick-tag-label';
-        label.textContent = tag;
-        
-        container.appendChild(checkbox);
-        container.appendChild(label);
-        
-        // 获取标签的分类（从标签数据中获取或默认为"其他"）
-        const tagData = videoList.find(v => v.tags && v.tags.includes(tag));
-        const category = (tagData && tagData.tagCategories && tagData.tagCategories[tag]) || 'other';
-        
-        // 将标签添加到相应的分类容器中
-        const categoryContent = document.querySelector(`.tag-category[data-category="${category}"] .tag-category-content`);
-        if (categoryContent) {
-            categoryContent.appendChild(container);
+    // 创建分类容器
+    Object.entries(tagCategories).forEach(([category, config]) => {
+        if (categorizedTags[category] && categorizedTags[category].length > 0) {
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = `tag-category${config.defaultExpanded ? '' : ' collapsed'}`;
+            categoryDiv.dataset.category = category;
+            
+            const header = document.createElement('div');
+            header.className = 'tag-category-header';
+            header.innerHTML = `
+                <span class="tag-category-title">${config.title}</span>
+                <span class="tag-category-arrow">▼</span>
+            `;
+            header.onclick = () => {
+                categoryDiv.classList.toggle('collapsed');
+            };
+            
+            const content = document.createElement('div');
+            content.className = 'tag-category-content';
+            
+            // 按字母顺序排序标签
+            categorizedTags[category].sort().forEach(tag => {
+                const container = document.createElement('div');
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `tag-${tag}`;
+                checkbox.className = 'quick-tag-checkbox';
+                checkbox.checked = currentTags.includes(tag);
+                
+                const label = document.createElement('label');
+                label.htmlFor = `tag-${tag}`;
+                label.className = 'quick-tag-label';
+                label.textContent = tag;
+                
+                container.appendChild(checkbox);
+                container.appendChild(label);
+                content.appendChild(container);
+            });
+            
+            categoryDiv.appendChild(header);
+            categoryDiv.appendChild(content);
+            tagsList.appendChild(categoryDiv);
         }
     });
 }
@@ -684,7 +688,7 @@ function initializeQuickTags() {
     closeBtn.onclick = closeModal;
     cancelBtn.onclick = closeModal;
     
-    // 点击���话框外部关闭
+    // 点击对话框外部关闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             closeModal();
@@ -855,17 +859,18 @@ function updateTagManagerList() {
     container.innerHTML = '';
     
     // 收集所有标签信息
-    const tagInfo = new Map(); // 存标签���用次数和分类信息
+    const tagInfo = new Map(); // 存储标签使用次数
     videoList.forEach(video => {
         if (video.tags) {
             video.tags.forEach(tag => {
                 if (!tagInfo.has(tag)) {
                     tagInfo.set(tag, {
                         count: 1,
-                        category: (video.tagCategories && video.tagCategories[tag]) || 'other'
+                        category: globalTagMapping[tag] || 'other'
                     });
                 } else {
-                    tagInfo.get(tag).count++;
+                    const info = tagInfo.get(tag);
+                    info.count++;
                 }
             });
         }
@@ -893,23 +898,15 @@ function updateTagManagerList() {
             category.appendChild(option);
         });
         
-        // 当分类改变时更新所有使用该标签的视频
+        // 当分类改变时更新全局标签映射
         category.onchange = () => {
             const newCategory = category.value;
-            videoList.forEach(video => {
-                if (video.tags && video.tags.includes(tag)) {
-                    if (!video.tagCategories) {
-                        video.tagCategories = {};
-                    }
-                    video.tagCategories[tag] = newCategory;
-                    
-                    // 通知主进程更新标签分类
-                    ipcRenderer.send('update-tag-category', {
-                        videoId: video.id,
-                        tag: tag,
-                        category: newCategory
-                    });
-                }
+            globalTagMapping[tag] = newCategory;
+            
+            // 通知主进程更新标签分类
+            ipcRenderer.send('update-tag-category', {
+                tag: tag,
+                category: newCategory
             });
         };
         
@@ -1011,7 +1008,7 @@ function updateVideoList(maintainOrder = false) {
     // 获取当前排序方式
     const sortType = document.getElementById('sort-type').value;
     
-    // 获取选中的标签过滤器
+    // 获取选中的标过滤器
     const activeFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
         .map(item => item.textContent);
     
@@ -1050,7 +1047,7 @@ function updateVideoList(maintainOrder = false) {
             infoText += `\n时长: ${formatDuration(video.duration)}`;
         }
         if (video.lastPlayed) {
-            infoText += `\n上次播��: ${formatDate(video.lastPlayed)}`;
+            infoText += `\n上次播放: ${formatDate(video.lastPlayed)}`;
         }
         if (video.watchTime > 0) {
             const progress = video.duration ? Math.round((video.watchTime / video.duration) * 100) : 0;
@@ -1261,11 +1258,25 @@ ipcRenderer.on('scan-progress', (event, { current, total, currentFile }) => {
 });
 
 // 接收标签分类更新
-ipcRenderer.on('tag-categories-loaded', (event, categories) => {
+ipcRenderer.on('tag-categories-loaded', (event, { categories, tagMapping }) => {
+    console.log('Received tag categories:', categories);
+    console.log('Received tag mapping:', tagMapping);
     tagCategories = categories;
+    globalTagMapping = tagMapping || {};
+    
+    // 更新所有相关的UI
     updateTagManagerList();
     updateQuickTagsModal();
     updateFilterList();
+});
+
+// 接收单个标签分类更新
+ipcRenderer.on('tag-categories-updated', (event, { tag, category }) => {
+    globalTagMapping[tag] = category;
+    updateTagManagerList();
+    updateQuickTagsModal();
+    updateFilterList();
+    updateVideoList(true);
 });
 
 // 扫描状态处理

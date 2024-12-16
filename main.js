@@ -22,10 +22,6 @@ const defaultTagCategories = {
         title: '类型',
         defaultExpanded: true
     },
-    actor: {
-        title: '演员',
-        defaultExpanded: true
-    },
     content: {
         title: '内容',
         defaultExpanded: true
@@ -43,6 +39,9 @@ const defaultTagCategories = {
         defaultExpanded: false
     }
 };
+
+// 全局标签分类映射
+let globalTagCategories = new Map();  // 存储标签到分类的映射
 
 // 计算文件的唯一标识
 function getVideoId(filePath) {
@@ -63,11 +62,14 @@ function saveSettings(immediate = false) {
         const settings = {
             watchFolders: Array.from(watchFolders),
             videoHistory: Array.from(videoHistory.entries()).reduce((obj, [key, value]) => {
-                obj[key] = value;
+                // 不再在每个视频中存储标签分类
+                const { tagCategories, ...rest } = value;
+                obj[key] = rest;
                 return obj;
             }, {}),
             activeTagFilters: activeTagFilters,
             tagCategories: mainWindow ? mainWindow.tagCategories : defaultTagCategories,
+            globalTagCategories: Object.fromEntries(globalTagCategories),  // 保存全局标签分类映射
             quickScanEnabled: mainWindow ? mainWindow.quickScanEnabled : false,
             lastUpdated: new Date().toISOString()
         };
@@ -90,7 +92,8 @@ function loadSettings() {
             watchFolders: [],
             videoHistory: {},
             tagCategories: defaultTagCategories,
-            quickScanEnabled: false  // 添加快速扫描状态的默认值
+            globalTagCategories: {},
+            quickScanEnabled: false
         };
 
         if (fs.existsSync(settingsPath)) {
@@ -108,14 +111,23 @@ function loadSettings() {
                 });
             }
 
+            // 加载标签分类
+            if (loadedSettings.tagCategories) {
+                settings.tagCategories = {
+                    ...defaultTagCategories,
+                    ...loadedSettings.tagCategories
+                };
+            }
+
+            // 加载全局标签分类映射
+            if (loadedSettings.globalTagCategories) {
+                globalTagCategories = new Map(Object.entries(loadedSettings.globalTagCategories));
+                settings.globalTagCategories = loadedSettings.globalTagCategories;
+            }
+
             // 加载视频历史
             if (loadedSettings.videoHistory) {
                 videoHistory = new Map(Object.entries(loadedSettings.videoHistory));
-            }
-
-            // 加载标签分类
-            if (loadedSettings.tagCategories) {
-                settings.tagCategories = loadedSettings.tagCategories;
             }
 
             // 加载快速扫描状态
@@ -126,6 +138,15 @@ function loadSettings() {
             console.log('No settings file found, will create one when saving');
         }
 
+        // 如果主窗口存在，立即更新标签分类和映射
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.tagCategories = settings.tagCategories;
+            mainWindow.webContents.send('tag-categories-loaded', {
+                categories: settings.tagCategories,
+                tagMapping: Object.fromEntries(globalTagCategories)
+            });
+        }
+
         return settings;
     } catch (err) {
         console.error('Error loading settings:', err);
@@ -133,6 +154,7 @@ function loadSettings() {
             watchFolders: [],
             videoHistory: {},
             tagCategories: defaultTagCategories,
+            globalTagCategories: {},
             quickScanEnabled: false
         };
     }
@@ -178,7 +200,12 @@ function createWindow() {
 
     // 发送标签分类到渲染进程
     mainWindow.webContents.on('did-finish-load', () => {
-        mainWindow.webContents.send('tag-categories-loaded', mainWindow.tagCategories);
+        // 发送标签分类和映射数据
+        mainWindow.webContents.send('tag-categories-loaded', {
+            categories: settings.tagCategories,
+            tagMapping: Object.fromEntries(globalTagCategories)
+        });
+
         // 如果有文件夹，使用保存的快速扫描状态进行扫描
         if (watchFolders.size > 0) {
             setupWatcher();
@@ -415,7 +442,7 @@ async function updateVideoList(quickScan = false) {
 }
 
 app.whenReady().then(() => {
-    // 先创建口
+    // 先建口
     mainWindow = createWindow();
     
     // 处理标签过滤器状态请求
@@ -436,7 +463,7 @@ app.whenReady().then(() => {
         }
     });
 
-    // 处理视频播放进度更新
+    // 处理视频播放进度新
     ipcMain.on('update-video-progress', (event, { videoId, currentTime, duration }) => {
         const videoInfo = videoHistory.get(videoId) || {
             watched: false,
@@ -464,7 +491,7 @@ app.whenReady().then(() => {
         
         if (!videoInfo.recentPlayCounted && (isLongEnough || isAlmostComplete)) {
             videoInfo.playCount++;
-            videoInfo.recentPlayCounted = true;  // 标记本次播放已数
+            videoInfo.recentPlayCounted = true;  // 标记本次播放次数
             videoInfo.significantPlays++;  // 同时增加有效播放次数
             videoInfo.recentSignificantPlay = true;  // 标记本次有效播放已计数
             
@@ -543,7 +570,7 @@ app.whenReady().then(() => {
     ipcMain.on('remove-folder', (event, folder) => {
         watchFolders.delete(folder);
         setupWatcher();
-        // 移除文件夹时也要保持快速扫描模式
+        // 移除文件夹时也保持快速扫描模式
         const quickScan = mainWindow && mainWindow.quickScanEnabled;
         updateVideoList(quickScan);
         saveSettings();
@@ -573,22 +600,28 @@ app.whenReady().then(() => {
             if (!videoInfo.tags) {
                 videoInfo.tags = [];
             }
-            if (!videoInfo.tagCategories) {
-                videoInfo.tagCategories = {};
-            }
             if (!videoInfo.tags.includes(tag)) {
                 videoInfo.tags.push(tag);
-                videoInfo.tagCategories[tag] = category || 'other';
+                // 更新全局标签映射
+                globalTagCategories.set(tag, category || 'other');
                 videoHistory.set(videoId, videoInfo);
                 
-                // 通知渲染进程更新视频状态
+                // 通知渲染进程更新视频状态和标签分类
                 mainWindow.webContents.send('video-state-updated', {
                     videoId,
                     updates: {
-                        tags: videoInfo.tags,
-                        tagCategories: videoInfo.tagCategories
+                        tags: videoInfo.tags
                     }
                 });
+
+                // 发送更新后的标签映射到渲染进程
+                mainWindow.webContents.send('tag-categories-loaded', {
+                    categories: mainWindow.tagCategories,
+                    tagMapping: Object.fromEntries(globalTagCategories)
+                });
+
+                // 保存设置
+                saveSettings(true);
             }
         }
     });
@@ -617,18 +650,6 @@ app.whenReady().then(() => {
         }
     });
 
-    // 处理标签分类更新
-    ipcMain.on('update-tag-category', (event, { videoId, tag, category }) => {
-        const videoInfo = videoHistory.get(videoId);
-        if (videoInfo) {
-            if (!videoInfo.tagCategories) {
-                videoInfo.tagCategories = {};
-            }
-            videoInfo.tagCategories[tag] = category;
-            videoHistory.set(videoId, videoInfo);
-        }
-    });
-
     // 处理标签分类保存
     ipcMain.on('save-tag-categories', (event, categories) => {
         if (mainWindow) {
@@ -637,7 +658,29 @@ app.whenReady().then(() => {
                 categories.other = defaultTagCategories.other;
             }
             mainWindow.tagCategories = categories;
+            
+            // 标记有未保存的更改
+            hasUnsavedChanges = true;
+            // 立即保存设置
+            saveSettings(true);
         }
+    });
+
+    // 处理标签分类更新
+    ipcMain.on('update-tag-category', (event, { tag, category }) => {
+        // 更新全局标签分类映射
+        globalTagCategories.set(tag, category);
+        
+        // 通知渲染进程更新标签分类
+        mainWindow.webContents.send('tag-categories-updated', {
+            tag,
+            category
+        });
+        
+        // 标记有未保存的更改
+        hasUnsavedChanges = true;
+        // 立即保存设置
+        saveSettings(true);
     });
 
     app.on('activate', () => {
