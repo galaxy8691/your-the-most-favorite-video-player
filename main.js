@@ -9,6 +9,8 @@ let mainWindow;
 let watcher;
 let watchFolders = new Set();
 let videoHistory = new Map(); // 存储视频播放历史
+let globalTagCategories = new Map();  // 存储标签到分类的映射
+let historicalTags = new Set();  // 存储所有历史使用过的标签
 
 // 支持的视频格式
 const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.wmv'];
@@ -40,9 +42,6 @@ const defaultTagCategories = {
     }
 };
 
-// 全局标签分类映射
-let globalTagCategories = new Map();  // 存储标签到分类的映射
-
 // 计算文件的唯一标识
 function getVideoId(filePath) {
     const stats = fs.statSync(filePath);
@@ -70,6 +69,7 @@ function saveSettings(immediate = false) {
             activeTagFilters: activeTagFilters,
             tagCategories: mainWindow ? mainWindow.tagCategories : defaultTagCategories,
             globalTagCategories: Object.fromEntries(globalTagCategories),  // 保存全局标签分类映射
+            historicalTags: Array.from(historicalTags),  // 保存历史标签
             quickScanEnabled: mainWindow ? mainWindow.quickScanEnabled : false,
             lastUpdated: new Date().toISOString()
         };
@@ -93,6 +93,7 @@ function loadSettings() {
             videoHistory: {},
             tagCategories: defaultTagCategories,
             globalTagCategories: {},
+            historicalTags: [],
             quickScanEnabled: false
         };
 
@@ -125,9 +126,20 @@ function loadSettings() {
                 settings.globalTagCategories = loadedSettings.globalTagCategories;
             }
 
+            // 加载历史标签
+            if (loadedSettings.historicalTags) {
+                historicalTags = new Set(loadedSettings.historicalTags);
+            }
+
             // 加载视频历史
             if (loadedSettings.videoHistory) {
                 videoHistory = new Map(Object.entries(loadedSettings.videoHistory));
+                // 从视频历史中恢复标签到历史标签集合
+                videoHistory.forEach(video => {
+                    if (video.tags) {
+                        video.tags.forEach(tag => historicalTags.add(tag));
+                    }
+                });
             }
 
             // 加载快速扫描状态
@@ -143,7 +155,8 @@ function loadSettings() {
             mainWindow.tagCategories = settings.tagCategories;
             mainWindow.webContents.send('tag-categories-loaded', {
                 categories: settings.tagCategories,
-                tagMapping: Object.fromEntries(globalTagCategories)
+                tagMapping: Object.fromEntries(globalTagCategories),
+                historicalTags: Array.from(historicalTags)  // 发送历史标签
             });
         }
 
@@ -155,6 +168,7 @@ function loadSettings() {
             videoHistory: {},
             tagCategories: defaultTagCategories,
             globalTagCategories: {},
+            historicalTags: [],
             quickScanEnabled: false
         };
     }
@@ -203,7 +217,8 @@ function createWindow() {
         // 发送标签分类和映射数据
         mainWindow.webContents.send('tag-categories-loaded', {
             categories: settings.tagCategories,
-            tagMapping: Object.fromEntries(globalTagCategories)
+            tagMapping: Object.fromEntries(globalTagCategories),
+            historicalTags: Array.from(historicalTags)  // 发送历史标签
         });
 
         // 如果有文件夹，使用保存的快速扫描状态进行扫描
@@ -602,8 +617,9 @@ app.whenReady().then(() => {
             }
             if (!videoInfo.tags.includes(tag)) {
                 videoInfo.tags.push(tag);
-                // 更新全局标签映射
+                // 更新全局标签映射和历史标签
                 globalTagCategories.set(tag, category || 'other');
+                historicalTags.add(tag);  // 添加到历史标签
                 videoHistory.set(videoId, videoInfo);
                 
                 // 通知渲染进程更新视频状态和标签分类
@@ -617,7 +633,8 @@ app.whenReady().then(() => {
                 // 发送更新后的标签映射到渲染进程
                 mainWindow.webContents.send('tag-categories-loaded', {
                     categories: mainWindow.tagCategories,
-                    tagMapping: Object.fromEntries(globalTagCategories)
+                    tagMapping: Object.fromEntries(globalTagCategories),
+                    historicalTags: Array.from(historicalTags)  // 发送历史标签
                 });
 
                 // 保存设置

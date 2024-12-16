@@ -34,7 +34,7 @@ function showLoading(message) {
     overlay.classList.add('active');
     // 移除阻塞样式
     overlay.style.pointerEvents = 'none';
-    // 只让取���按钮可以点击
+    // 只让取����按钮可以点击
     cancelBtn.style.pointerEvents = 'auto';
 }
 
@@ -218,7 +218,7 @@ videoPlayer.addEventListener('loadedmetadata', async () => {
     // 确保视频可以播放
     videoPlayer.play().catch(e => {
         console.error('Autoplay failed:', e);
-        // 如果自动播放失����再次尝试播放
+        // 如果自动播放��再次尝试播放
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(() => {
@@ -435,7 +435,7 @@ function initializeTagFilter() {
     
     closeBtn.onclick = closeModal;
     
-    // 点击对话框外部���闭
+    // 点击对话框外部闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             closeModal();
@@ -481,14 +481,6 @@ function updateFilterList() {
     const filterList = document.getElementById('filter-list');
     filterList.innerHTML = '';
     
-    // 收集所有唯一的标签
-    const allTags = new Set();
-    videoList.forEach(video => {
-        if (video.tags) {
-            video.tags.forEach(tag => allTags.add(tag));
-        }
-    });
-    
     // 按分类组织标签
     const categorizedTags = {};
     Object.keys(tagCategories).forEach(category => {
@@ -496,7 +488,7 @@ function updateFilterList() {
     });
     
     // 将标签分类
-    allTags.forEach(tag => {
+    Array.from(historicalTags).forEach(tag => {
         const category = globalTagMapping[tag] || 'other';
         if (!categorizedTags[category]) {
             categorizedTags[category] = [];
@@ -570,14 +562,6 @@ function updateQuickTagsModal() {
     const tagsList = document.getElementById('quick-tags-list');
     tagsList.innerHTML = '';
     
-    // 收集所有唯一的标签
-    const allTags = new Set();
-    videoList.forEach(video => {
-        if (video.tags) {
-            video.tags.forEach(tag => allTags.add(tag));
-        }
-    });
-    
     // 获取当前视频的标签
     const currentVideo = videoList.find(v => v.id === currentVideoId);
     const currentTags = currentVideo ? currentVideo.tags || [] : [];
@@ -588,8 +572,8 @@ function updateQuickTagsModal() {
         categorizedTags[category] = [];
     });
     
-    // 将标签分类
-    allTags.forEach(tag => {
+    // 将标签分类（使用历史标签）
+    Array.from(historicalTags).forEach(tag => {
         const category = globalTagMapping[tag] || 'other';
         if (!categorizedTags[category]) {
             categorizedTags[category] = [];
@@ -872,6 +856,16 @@ function updateTagManagerList() {
                     const info = tagInfo.get(tag);
                     info.count++;
                 }
+            });
+        }
+    });
+
+    // 添加历史标签（如果不在当前视频中）
+    Array.from(historicalTags).forEach(tag => {
+        if (!tagInfo.has(tag)) {
+            tagInfo.set(tag, {
+                count: 0,
+                category: globalTagMapping[tag] || 'other'
             });
         }
     });
@@ -1258,11 +1252,13 @@ ipcRenderer.on('scan-progress', (event, { current, total, currentFile }) => {
 });
 
 // 接收标签分类更新
-ipcRenderer.on('tag-categories-loaded', (event, { categories, tagMapping }) => {
+ipcRenderer.on('tag-categories-loaded', (event, { categories, tagMapping, historicalTags: tags }) => {
     console.log('Received tag categories:', categories);
     console.log('Received tag mapping:', tagMapping);
+    console.log('Received historical tags:', tags);
     tagCategories = categories;
     globalTagMapping = tagMapping || {};
+    historicalTags = new Set(tags || []);
     
     // 更新所有相关的UI
     updateTagManagerList();
