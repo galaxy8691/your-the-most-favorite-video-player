@@ -12,19 +12,41 @@ function showLoading(message) {
     const overlay = document.querySelector('.loading-overlay');
     const text = overlay.querySelector('.loading-text');
     const progress = overlay.querySelector('.loading-progress');
+    
+    // 确保有取消按钮
+    let cancelBtn = overlay.querySelector('.cancel-scan-button');
+    if (!cancelBtn) {
+        cancelBtn = document.createElement('button');
+        cancelBtn.className = 'cancel-scan-button';
+        cancelBtn.textContent = '取消扫描';
+        cancelBtn.onclick = () => {
+            ipcRenderer.send('cancel-scan');
+            hideLoading();
+        };
+        overlay.appendChild(cancelBtn);
+    }
+    
     text.textContent = message;
     progress.textContent = '';
     overlay.classList.add('active');
+    // 移除阻塞样式
+    overlay.style.pointerEvents = 'none';
+    // 只让取消按钮可以点击
+    cancelBtn.style.pointerEvents = 'auto';
 }
 
 function updateLoadingProgress(current, total) {
     const progress = document.querySelector('.loading-progress');
-    progress.textContent = `${current} / ${total}`;
+    if (progress) {
+        progress.textContent = `${current} / ${total}`;
+    }
 }
 
 function hideLoading() {
     const overlay = document.querySelector('.loading-overlay');
-    overlay.classList.remove('active');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
 }
 
 // 初始化视频播放器
@@ -74,7 +96,7 @@ function playNextVideo() {
         } while (videoItems.length > 1 && randomIndex === currentIndex);
         nextItem = videoItems[randomIndex];
     } else {
-        // 顺序模式：选择下一个视频，如果是后一个则循环到第一个
+        // 顺序模式：选择下一个视频，如果是最后一个则循环到第一个
         const nextIndex = (currentIndex + 1) % videoItems.length;
         nextItem = videoItems[nextIndex];
     }
@@ -108,7 +130,7 @@ function playPrevVideo() {
         prevItem = videoItems[prevIndex];
     }
 
-    // 触发点击事件来播放上一个视��
+    // 触发点击事件来播放上一个视频
     if (prevItem) {
         prevItem.click();
     }
@@ -790,7 +812,7 @@ function updateCategoryManager() {
             deleteBtn.className = 'remove-folder';
             deleteBtn.onclick = () => {
                 if (confirm(`确定要删除分类"${category.title}"吗？所有使用此分类的标签将移至"其他"分类。`)) {
-                    // 将该分类下的所有标签移到"其他"分类
+                    // 将该分类下的所有标签移到"其他"��类
                     videoList.forEach(video => {
                         if (video.tagCategories) {
                             Object.entries(video.tagCategories).forEach(([tag, cat]) => {
@@ -1182,12 +1204,10 @@ function updateVideoState(videoId, updates) {
 ipcRenderer.on('folder-selected', (event, folderPath) => {
     if (!watchFolders.has(folderPath)) {
         const quickScan = document.getElementById('quick-scan').checked;
-        showLoading('正在扫描视频文件夹...');
+        showLoading('正在扫描视频文件夹...\n(扫描过程中您可以继续使用播放器)');
         watchFolders.add(folderPath);
         updateFolderList();
         ipcRenderer.send('add-folder', { folder: folderPath, quickScan });
-    } else {
-        hideLoading();
     }
 });
 
@@ -1207,8 +1227,11 @@ ipcRenderer.on('video-state-updated', (event, { videoId, updates }) => {
 
 // 接收扫描进度更新
 ipcRenderer.on('scan-progress', (event, { current, total, currentFile }) => {
-    const progress = document.querySelector('.loading-progress');
-    progress.textContent = `正在处理: ${current} / ${total}\n${path.basename(currentFile)}`;
+    updateLoadingProgress(current, total);
+    const text = document.querySelector('.loading-text');
+    if (text) {
+        text.textContent = `正在扫描: ${path.basename(currentFile)}\n(扫描过程中您可以继续使用播放器)`;
+    }
 });
 
 // 接收标签分类更新
@@ -1217,4 +1240,66 @@ ipcRenderer.on('tag-categories-loaded', (event, categories) => {
     updateTagManagerList();
     updateQuickTagsModal();
     updateFilterList();
-}); 
+});
+
+// 扫描状态处理
+let scanTimeout;
+
+ipcRenderer.on('scan-start', () => {
+    showLoading('正在扫描视频文件夹...');
+    // 添加超时检测
+    scanTimeout = setTimeout(() => {
+        const overlay = document.querySelector('.loading-overlay');
+        if (overlay.classList.contains('active')) {
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = '取消扫描';
+            cancelButton.className = 'cancel-scan-button';
+            cancelButton.onclick = () => {
+                ipcRenderer.send('cancel-scan');
+                hideLoading();
+            };
+            overlay.appendChild(cancelButton);
+        }
+    }, 10000); // 10秒后显示取消按钮
+});
+
+ipcRenderer.on('scan-progress', (event, { current, total, currentFile }) => {
+    updateLoadingProgress(current, total);
+    const text = document.querySelector('.loading-text');
+    text.textContent = `正在扫描: ${path.basename(currentFile)}`;
+});
+
+ipcRenderer.on('scan-error', (event, message) => {
+    if (scanTimeout) {
+        clearTimeout(scanTimeout);
+    }
+    const text = document.querySelector('.loading-text');
+    text.textContent = `扫描出错: ${message}`;
+    setTimeout(hideLoading, 3000);
+});
+
+ipcRenderer.on('scan-complete', () => {
+    if (scanTimeout) {
+        clearTimeout(scanTimeout);
+    }
+    hideLoading();
+});
+
+// 添加样式
+const style = document.createElement('style');
+style.textContent = `
+.cancel-scan-button {
+    margin-top: 20px;
+    padding: 8px 16px;
+    background-color: #ff4444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.cancel-scan-button:hover {
+    background-color: #ff6666;
+}
+`;
+document.head.appendChild(style); 

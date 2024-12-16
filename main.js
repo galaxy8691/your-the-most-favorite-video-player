@@ -52,7 +52,7 @@ function getVideoId(filePath) {
 }
 
 // 保存所有设置
-function saveSettings() {
+function saveSettings(immediate = false) {
     try {
         // 获取标签过滤器状态，确保在窗口被销毁时不会出错
         let activeTagFilters = [];
@@ -68,11 +68,16 @@ function saveSettings() {
             }, {}),
             activeTagFilters: activeTagFilters,
             tagCategories: mainWindow ? mainWindow.tagCategories : defaultTagCategories,
-            quickScanEnabled: mainWindow ? mainWindow.quickScanEnabled : false,  // 保存快速扫描状态
+            quickScanEnabled: mainWindow ? mainWindow.quickScanEnabled : false,
             lastUpdated: new Date().toISOString()
         };
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf8' });
-        console.log('Settings saved to:', settingsPath);
+
+        // 使用临时文件进行写入
+        const tempPath = settingsPath + '.tmp';
+        fs.writeFileSync(tempPath, JSON.stringify(settings, null, 2), { encoding: 'utf8' });
+        
+        // 重命名临时文件为正式文件
+        fs.renameSync(tempPath, settingsPath);
     } catch (err) {
         console.error('Error saving settings:', err);
     }
@@ -189,120 +194,149 @@ function createWindow() {
 
 // 递归扫描文件夹中的视频文件
 async function scanVideoFiles(quickScan = false) {
-    let videos = [];
+    const videos = [];
     let totalFiles = 0;
     let processedFiles = 0;
-    
-    async function scanFolder(folder) {
+    let isScanning = true;
+
+    // 分块处理文件列表
+    async function processFilesInChunks(files, folder, chunkSize = 50) {
+        const chunks = [];
+        for (let i = 0; i < files.length; i += chunkSize) {
+            chunks.push(files.slice(i, i + chunkSize));
+        }
+
+        for (const chunk of chunks) {
+            if (!isScanning) break;
+            await Promise.all(chunk.map(file => processFile(file, folder)));
+            // 给UI线程一个响应的机会
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+    }
+
+    // 处理单个文件
+    async function processFile(file, folder) {
+        if (!isScanning) return;
+
+        const filePath = path.join(folder, file);
         try {
-            const files = fs.readdirSync(folder);
-            for (const file of files) {
-                const filePath = path.join(folder, file);
-                const stat = fs.statSync(filePath);
-                
-                if (stat.isDirectory()) {
-                    await scanFolder(filePath);
-                } else if (stat.isFile()) {
-                    const ext = path.extname(file).toLowerCase();
-                    if (videoExtensions.includes(ext)) {
-                        const videoId = getVideoId(filePath);
-                        let videoInfo = videoHistory.get(videoId);
-                        
-                        // 如果没有历史记录，创建一个新的记录
-                        if (!videoInfo) {
-                            videoInfo = {
-                                watched: false,
-                                watchTime: 0,
-                                duration: 0,
-                                lastPlayed: null,
-                                firstSeen: new Date().toISOString(),
-                                playCount: 0,
-                                significantPlays: 0,
-                                rating: 0,
-                                tags: []
-                            };
-                            videoHistory.set(videoId, videoInfo);
-                        }
-                        
-                        // 只在非快速扫描模式下更新度和获取时长
-                        if (!quickScan) {
-                            processedFiles++;
+            const stat = await fs.promises.stat(filePath);
+            if (!isScanning) return;
+
+            if (stat.isDirectory()) {
+                const subFiles = await fs.promises.readdir(filePath);
+                if (isScanning) {
+                    await processFilesInChunks(subFiles, filePath);
+                }
+            } else if (stat.isFile()) {
+                const ext = path.extname(file).toLowerCase();
+                if (videoExtensions.includes(ext)) {
+                    if (!quickScan) {
+                        processedFiles++;
+                        if (mainWindow && processedFiles % 10 === 0) {
                             mainWindow.webContents.send('scan-progress', {
                                 current: processedFiles,
                                 total: totalFiles,
                                 currentFile: filePath
                             });
-                            
-                            // 只在非快速扫描模式下获取时长
-                            if (!videoInfo.duration) {
-                                try {
-                                    videoInfo.duration = await getVideoDurationInSeconds(filePath);
-                                    videoHistory.set(videoId, videoInfo);
-                                    saveSettings();
-                                } catch (err) {
-                                    console.error(`Error getting duration for ${filePath}:`, err);
-                                }
-                            }
                         }
-                        
-                        videos.push({
-                            id: videoId,
-                            path: filePath,
-                            folder: folder,
-                            filename: file,
-                            watched: videoInfo.watched,
-                            watchTime: videoInfo.watchTime,
-                            duration: videoInfo.duration,
-                            lastPlayed: videoInfo.lastPlayed,
-                            firstSeen: videoInfo.firstSeen,
-                            isNew: !videoInfo.watched,
-                            playCount: videoInfo.playCount,
-                            significantPlays: videoInfo.significantPlays,
-                            rating: videoInfo.rating,
-                            tags: videoInfo.tags || []
-                        });
                     }
+
+                    const videoId = getVideoId(filePath);
+                    let videoInfo = videoHistory.get(videoId);
+
+                    if (!videoInfo) {
+                        videoInfo = {
+                            watched: false,
+                            watchTime: 0,
+                            duration: 0,
+                            lastPlayed: null,
+                            firstSeen: new Date().toISOString(),
+                            playCount: 0,
+                            significantPlays: 0,
+                            rating: 0,
+                            tags: []
+                        };
+                        videoHistory.set(videoId, videoInfo);
+                    }
+
+                    if (!quickScan && !videoInfo.duration) {
+                        try {
+                            videoInfo.duration = await getVideoDurationInSeconds(filePath);
+                            videoHistory.set(videoId, videoInfo);
+                        } catch (err) {
+                            console.error(`Error getting duration for ${filePath}:`, err);
+                        }
+                    }
+
+                    videos.push({
+                        id: videoId,
+                        path: filePath,
+                        folder: folder,
+                        filename: file,
+                        watched: videoInfo.watched,
+                        watchTime: videoInfo.watchTime,
+                        duration: videoInfo.duration,
+                        lastPlayed: videoInfo.lastPlayed,
+                        firstSeen: videoInfo.firstSeen,
+                        isNew: !videoInfo.watched,
+                        playCount: videoInfo.playCount,
+                        significantPlays: videoInfo.significantPlays,
+                        rating: videoInfo.rating,
+                        tags: videoInfo.tags || []
+                    });
                 }
             }
         } catch (err) {
-            console.error(`Error scanning folder ${folder}:`, err);
+            console.error(`Error processing file ${filePath}:`, err);
         }
     }
 
-    // 只在非快速扫描模式下计算总文件数
-    if (!quickScan) {
-        function countFiles(folder) {
-            try {
-                const files = fs.readdirSync(folder);
-                for (const file of files) {
-                    const filePath = path.join(folder, file);
-                    const stat = fs.statSync(filePath);
-                    
+    // 计算总文件数
+    async function countFiles(folder) {
+        try {
+            const files = await fs.promises.readdir(folder);
+            await Promise.all(files.map(async file => {
+                const filePath = path.join(folder, file);
+                try {
+                    const stat = await fs.promises.stat(filePath);
                     if (stat.isDirectory()) {
-                        countFiles(filePath);
+                        await countFiles(filePath);
                     } else if (stat.isFile()) {
                         const ext = path.extname(file).toLowerCase();
                         if (videoExtensions.includes(ext)) {
                             totalFiles++;
                         }
                     }
+                } catch (err) {
+                    console.error(`Error accessing file ${filePath}:`, err);
                 }
+            }));
+        } catch (err) {
+            console.error(`Error reading directory ${folder}:`, err);
+        }
+    }
+
+    try {
+        if (!quickScan) {
+            await Promise.all([...watchFolders].map(folder => countFiles(folder)));
+        }
+
+        for (const folder of watchFolders) {
+            if (!isScanning) break;
+            try {
+                const files = await fs.promises.readdir(folder);
+                await processFilesInChunks(files, folder);
             } catch (err) {
-                console.error(`Error counting files in ${folder}:`, err);
+                console.error(`Error scanning folder ${folder}:`, err);
             }
         }
-        
-        // 扫描所有文件夹以计算总数
-        for (const folder of watchFolders) {
-            countFiles(folder);
-        }
-    }
 
-    for (const folder of watchFolders) {
-        await scanFolder(folder);
+        return videos;
+    } finally {
+        isScanning = false;
+        ipcMain.removeAllListeners('cancel-scan');
     }
-
-    return videos;
 }
 
 // 更新设置文件监视
@@ -315,47 +349,68 @@ function setupWatcher() {
         return;
     }
 
+    // 修改 chokidar 配置
     watcher = chokidar.watch([...watchFolders], {
         ignored: /(^|[\/\\])\../,
         persistent: true,
         recursive: true,
-        ignoreInitial: false
+        ignoreInitial: true,  // 改为 true，避免重复扫描
+        awaitWriteFinish: {   // 添加文件写入完成检测
+            stabilityThreshold: 2000,
+            pollInterval: 100
+        },
+        usePolling: false,    // 禁用轮询以提高性能
+        depth: 10             // 限制递归深度
     });
+
+    let debounceTimeout;
+    const debouncedUpdate = () => {
+        if (debounceTimeout) {
+            clearTimeout(debounceTimeout);
+        }
+        debounceTimeout = setTimeout(() => {
+            const quickScan = mainWindow && mainWindow.quickScanEnabled;
+            updateVideoList(quickScan);
+        }, 1000);
+    };
 
     watcher
         .on('add', filePath => {
             const ext = path.extname(filePath).toLowerCase();
             if (videoExtensions.includes(ext)) {
-                // 文件变化时也要保持快速扫描模式
-                const quickScan = mainWindow && mainWindow.quickScanEnabled;
-                updateVideoList(quickScan);
+                debouncedUpdate();
             }
         })
         .on('unlink', filePath => {
             const ext = path.extname(filePath).toLowerCase();
             if (videoExtensions.includes(ext)) {
-                // 文件变化时也要保持快速扫描模式
-                const quickScan = mainWindow && mainWindow.quickScanEnabled;
-                updateVideoList(quickScan);
+                debouncedUpdate();
             }
         })
-        .on('addDir', () => {
-            // 文件夹变化时也要保持快速扫描模式
-            const quickScan = mainWindow && mainWindow.quickScanEnabled;
-            updateVideoList(quickScan);
-        })
-        .on('unlinkDir', () => {
-            // 文件夹变化时也要保持快速扫描模式
-            const quickScan = mainWindow && mainWindow.quickScanEnabled;
-            updateVideoList(quickScan);
-        });
+        .on('addDir', debouncedUpdate)
+        .on('unlinkDir', debouncedUpdate);
 }
 
 // 更新视频列表
 async function updateVideoList(quickScan = false) {
-    const videos = await scanVideoFiles(quickScan);
     if (mainWindow) {
-        mainWindow.webContents.send('update-video-list', videos);
+        mainWindow.webContents.send('scan-start');
+    }
+    
+    try {
+        const videos = await scanVideoFiles(quickScan);
+        if (mainWindow) {
+            mainWindow.webContents.send('update-video-list', videos);
+        }
+    } catch (err) {
+        console.error('Error updating video list:', err);
+        if (mainWindow) {
+            mainWindow.webContents.send('scan-error', err.message);
+        }
+    } finally {
+        if (mainWindow) {
+            mainWindow.webContents.send('scan-complete');
+        }
     }
 }
 
@@ -378,7 +433,6 @@ app.whenReady().then(() => {
     ipcMain.on('save-tag-filters', (event, filters) => {
         if (mainWindow) {
             mainWindow.webContents.activeTagFilters = filters;
-            saveSettings();
         }
     });
 
@@ -410,7 +464,7 @@ app.whenReady().then(() => {
         
         if (!videoInfo.recentPlayCounted && (isLongEnough || isAlmostComplete)) {
             videoInfo.playCount++;
-            videoInfo.recentPlayCounted = true;  // 标记本次播放已计数
+            videoInfo.recentPlayCounted = true;  // 标记本次播放已数
             videoInfo.significantPlays++;  // 同时增加有效播放次数
             videoInfo.recentSignificantPlay = true;  // 标记本次有效播放已计数
             
@@ -425,7 +479,6 @@ app.whenReady().then(() => {
         }
 
         videoHistory.set(videoId, videoInfo);
-        saveSettings();
     });
 
     // 处理视频开始播放
@@ -440,21 +493,12 @@ app.whenReady().then(() => {
                 updates.isNew = false;
             }
             
-            // 重置���放计数标记并记录开始时间
+            // 重置放计数标记并记录开始时间
             videoInfo.recentPlayCounted = false;
             videoInfo.recentSignificantPlay = false;
             videoInfo.playStartTime = Date.now();  // 记录播放开始时间
             
             videoHistory.set(videoId, videoInfo);
-            saveSettings();
-
-            // 通知渲染进程更新视频状态
-            if (Object.keys(updates).length > 0) {
-                mainWindow.webContents.send('video-state-updated', {
-                    videoId,
-                    updates
-                });
-            }
         }
     });
 
@@ -464,7 +508,6 @@ app.whenReady().then(() => {
         if (videoInfo) {
             videoInfo.duration = duration;
             videoHistory.set(videoId, videoInfo);
-            saveSettings();
             
             // 通知渲染进程更新视频状态
             mainWindow.webContents.send('video-state-updated', {
@@ -512,8 +555,7 @@ app.whenReady().then(() => {
         if (videoInfo) {
             videoInfo.rating = rating;
             videoHistory.set(videoId, videoInfo);
-            saveSettings();
-
+            
             // 通知渲染进程更新评分
             mainWindow.webContents.send('video-state-updated', {
                 videoId,
@@ -524,7 +566,7 @@ app.whenReady().then(() => {
         }
     });
 
-    // 处理添加标签
+    // 处理添加���签
     ipcMain.on('add-tag', (event, { videoId, tag, category }) => {
         const videoInfo = videoHistory.get(videoId);
         if (videoInfo) {
@@ -538,16 +580,6 @@ app.whenReady().then(() => {
                 videoInfo.tags.push(tag);
                 videoInfo.tagCategories[tag] = category || 'other';
                 videoHistory.set(videoId, videoInfo);
-                saveSettings();
-
-                // 通知渲染进程更新标签
-                mainWindow.webContents.send('video-state-updated', {
-                    videoId,
-                    updates: {
-                        tags: videoInfo.tags,
-                        tagCategories: videoInfo.tagCategories
-                    }
-                });
             }
         }
     });
@@ -563,16 +595,6 @@ app.whenReady().then(() => {
                     delete videoInfo.tagCategories[tag];
                 }
                 videoHistory.set(videoId, videoInfo);
-                saveSettings();
-
-                // 通知渲染进程更新标签
-                mainWindow.webContents.send('video-state-updated', {
-                    videoId,
-                    updates: {
-                        tags: videoInfo.tags,
-                        tagCategories: videoInfo.tagCategories
-                    }
-                });
             }
         }
     });
@@ -586,15 +608,6 @@ app.whenReady().then(() => {
             }
             videoInfo.tagCategories[tag] = category;
             videoHistory.set(videoId, videoInfo);
-            saveSettings();
-
-            // 通知渲染进程更新标签
-            mainWindow.webContents.send('video-state-updated', {
-                videoId,
-                updates: {
-                    tagCategories: videoInfo.tagCategories
-                }
-            });
         }
     });
 
@@ -606,9 +619,6 @@ app.whenReady().then(() => {
                 categories.other = defaultTagCategories.other;
             }
             mainWindow.tagCategories = categories;
-            saveSettings();
-            // 通知所有渲染进程更新标签分类
-            mainWindow.webContents.send('tag-categories-loaded', categories);
         }
     });
 
@@ -619,12 +629,25 @@ app.whenReady().then(() => {
     });
 });
 
-// 程序退出前保存设置
+// 添加保存点
+let hasUnsavedChanges = false;
+
+// 定期检查是否需要保存（作为备份）
+setInterval(() => {
+    if (hasUnsavedChanges) {
+        saveSettings();
+        hasUnsavedChanges = false;
+    }
+}, 300000); // 每5分钟检查一次
+
+// 程序退出前保存
 app.on('before-quit', () => {
     saveSettings();
 });
 
+// 处理意外关闭
 app.on('window-all-closed', () => {
+    saveSettings();
     if (process.platform !== 'darwin') {
         app.quit();
     }

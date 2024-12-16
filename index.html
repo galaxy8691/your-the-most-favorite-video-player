@@ -233,16 +233,19 @@
 
         .loading-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            top: 20px;
+            right: 20px;
+            width: auto;
+            max-width: 300px;
             background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
             display: none;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
             z-index: 1000;
-            flex-direction: column;
+            pointer-events: none;
         }
 
         .loading-overlay.active {
@@ -250,25 +253,40 @@
         }
 
         .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #4CAF50;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
         .loading-text {
-            color: white;
-            font-size: 16px;
             text-align: center;
+            margin-bottom: 5px;
+            white-space: pre-line;
         }
 
         .loading-progress {
-            color: #4CAF50;
-            font-size: 14px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        .cancel-scan-button {
+            pointer-events: auto;
             margin-top: 10px;
+            padding: 5px 10px;
+            background: #ff4444;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .cancel-scan-button:hover {
+            background: #ff6666;
         }
 
         @keyframes spin {
@@ -1046,7 +1064,7 @@
                 </button>
                 <label class="random-play-label">
                     <input type="checkbox" id="random-play-checkbox">
-                    <span class="random-play-text">随��播放</span>
+                    <span class="random-play-text">随机播放</span>
                 </label>
             </div>
             <div class="video-list" id="video-list">
