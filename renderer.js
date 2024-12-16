@@ -338,7 +338,7 @@ function initializePlayerRating() {
 // 在文档加载完成后初始化评分控件
 document.addEventListener('DOMContentLoaded', initializePlayerRating);
 
-// 排序视频列表
+// 排序视频列���
 function sortVideoList(videos, sortType) {
     switch (sortType) {
         case 'rating':
@@ -350,6 +350,13 @@ function sortVideoList(videos, sortType) {
             });
         case 'name':
             return videos.sort((a, b) => a.filename.localeCompare(b.filename));
+        case 'playcount':
+            return videos.sort((a, b) => {
+                if ((b.playCount || 0) !== (a.playCount || 0)) {
+                    return (b.playCount || 0) - (a.playCount || 0);
+                }
+                return a.filename.localeCompare(b.filename);
+            });
         case 'new':
         default:
             return videos.sort((a, b) => {
@@ -677,7 +684,7 @@ function initializeQuickTags() {
     closeBtn.onclick = closeModal;
     cancelBtn.onclick = closeModal;
     
-    // 点击对话框外部关闭
+    // 点击���话框外部关闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             closeModal();
@@ -784,7 +791,7 @@ function initializeTagManager() {
     };
 }
 
-// 更新分类管理界面
+// 更新类管理界面
 function updateCategoryManager() {
     const container = document.getElementById('category-manager');
     container.innerHTML = '';
@@ -812,7 +819,7 @@ function updateCategoryManager() {
             deleteBtn.className = 'remove-folder';
             deleteBtn.onclick = () => {
                 if (confirm(`确定要删除分类"${category.title}"吗？所有使用此分类的标签将移至"其他"分类。`)) {
-                    // 将该分类下的所有标签移到"其他"��类
+                    // 将该分类下的所有标签移到"其他"分类
                     videoList.forEach(video => {
                         if (video.tagCategories) {
                             Object.entries(video.tagCategories).forEach(([tag, cat]) => {
@@ -848,7 +855,7 @@ function updateTagManagerList() {
     container.innerHTML = '';
     
     // 收集所有标签信息
-    const tagInfo = new Map(); // 存标签使用次数和分类信息
+    const tagInfo = new Map(); // 存标签���用次数和分类信息
     videoList.forEach(video => {
         if (video.tags) {
             video.tags.forEach(tag => {
@@ -973,7 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 请求保存的标签过滤器状态
+    // 请求保存的签过滤器状态
     ipcRenderer.send('request-tag-filters');
 });
 
@@ -997,6 +1004,10 @@ function updateVideoList(maintainOrder = false) {
         return;
     }
     
+    // 添加视频数量显示
+    const countDisplay = document.createElement('div');
+    countDisplay.className = 'video-count';
+    
     // 获取当前排序方式
     const sortType = document.getElementById('sort-type').value;
     
@@ -1004,7 +1015,7 @@ function updateVideoList(maintainOrder = false) {
     const activeFilters = Array.from(document.querySelectorAll('.tag-filter-item.active'))
         .map(item => item.textContent);
     
-    // 过滤和序视频列表
+    // 过滤和排序视频列表
     let filteredVideos = videoList;
     if (activeFilters.length > 0) {
         filteredVideos = videoList.filter(video => 
@@ -1015,6 +1026,10 @@ function updateVideoList(maintainOrder = false) {
     if (!maintainOrder) {
         filteredVideos = sortVideoList(filteredVideos, sortType);
     }
+
+    // 更新视频数量显示
+    countDisplay.textContent = `共 ${filteredVideos.length} 个视频${activeFilters.length > 0 ? ` (已筛选，总共 ${videoList.length} 个)` : ''}`;
+    container.appendChild(countDisplay);
     
     filteredVideos.forEach(video => {
         const videoItem = document.createElement('div');
@@ -1035,7 +1050,7 @@ function updateVideoList(maintainOrder = false) {
             infoText += `\n时长: ${formatDuration(video.duration)}`;
         }
         if (video.lastPlayed) {
-            infoText += `\n上次播放: ${formatDate(video.lastPlayed)}`;
+            infoText += `\n上次播��: ${formatDate(video.lastPlayed)}`;
         }
         if (video.watchTime > 0) {
             const progress = video.duration ? Math.round((video.watchTime / video.duration) * 100) : 0;
@@ -1072,7 +1087,7 @@ function updateVideoList(maintainOrder = false) {
                 const currentVideo = videoList.find(v => v.id === currentVideoId);
                 if (currentVideo) {
                     currentVideo.watchTime = videoPlayer.currentTime;
-                    // 发送最后的放进度
+                    // 发送最后的播放进度
                     ipcRenderer.send('update-video-progress', {
                         videoId: currentVideoId,
                         currentTime: videoPlayer.currentTime,
@@ -1081,7 +1096,7 @@ function updateVideoList(maintainOrder = false) {
                 }
             }
             
-            // 切换到视频
+            // 切换到新视频
             currentVideoId = video.id;
             const wasPlaying = !videoPlayer.paused;
             const oldSrc = videoPlayer.src;
@@ -1095,13 +1110,13 @@ function updateVideoList(maintainOrder = false) {
                 videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
             }
             
-            // 如果之前播放，或者这是新选择的视频，就自动播放
+            // 如果之前在播放，或者这是新选择的视频，就自动播放
             if (wasPlaying || oldSrc !== video.path) {
                 const playPromise = videoPlayer.play();
                 if (playPromise !== undefined) {
                     playPromise.catch(e => {
                         console.error('Play failed:', e);
-                        // 如果放失败，添加一次性击事件
+                        // 如果播放失败，添加一次性点击事件
                         videoPlayer.addEventListener('click', () => {
                             videoPlayer.play();
                         }, { once: true });
@@ -1109,11 +1124,22 @@ function updateVideoList(maintainOrder = false) {
                 }
             }
             
+            // 标记视频为已观看并通知主进程
+            ipcRenderer.send('video-started', { videoId: video.id });
+            
             // 更新当前播放信息、评分和标签显示
-            document.getElementById('current-video-info').textContent = 
-                `正在播放: ${path.basename(video.path)} (${relativePath})`;
+            const currentVideoInfo = document.getElementById('current-video-info');
+            currentVideoInfo.textContent = path.basename(video.path);
             updatePlayerRating(video.rating);
             updatePlayerTags(video.tags || []);
+            
+            // 更新视频状态
+            videoItem.classList.add('watched');
+            videoItem.classList.remove('new-video');
+            const title = videoItem.querySelector('.video-item-title');
+            if (title.textContent.includes(' (新)')) {
+                title.textContent = title.textContent.replace(' (新)', '');
+            }
         };
         
         container.appendChild(videoItem);

@@ -1038,6 +1038,16 @@
         .control-button:active {
             background: #333;
         }
+
+        .video-count {
+            padding: 10px 15px;
+            background: #333;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #aaa;
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -1056,6 +1066,7 @@
                     <option value="new">按新旧排序</option>
                     <option value="rating">按评分排序</option>
                     <option value="name">按名称排序</option>
+                    <option value="playcount">按播放次数排序</option>
                 </select>
                 <button id="manage-tags" class="manage-tags-button">管理标签</button>
                 <button id="filter-button" class="filter-button">

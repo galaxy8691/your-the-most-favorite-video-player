@@ -566,7 +566,7 @@ app.whenReady().then(() => {
         }
     });
 
-    // 处理添加���签
+    // 处理添加标签
     ipcMain.on('add-tag', (event, { videoId, tag, category }) => {
         const videoInfo = videoHistory.get(videoId);
         if (videoInfo) {
@@ -580,6 +580,15 @@ app.whenReady().then(() => {
                 videoInfo.tags.push(tag);
                 videoInfo.tagCategories[tag] = category || 'other';
                 videoHistory.set(videoId, videoInfo);
+                
+                // 通知渲染进程更新视频状态
+                mainWindow.webContents.send('video-state-updated', {
+                    videoId,
+                    updates: {
+                        tags: videoInfo.tags,
+                        tagCategories: videoInfo.tagCategories
+                    }
+                });
             }
         }
     });
@@ -595,6 +604,15 @@ app.whenReady().then(() => {
                     delete videoInfo.tagCategories[tag];
                 }
                 videoHistory.set(videoId, videoInfo);
+                
+                // 通知渲染进程更新视频状态
+                mainWindow.webContents.send('video-state-updated', {
+                    videoId,
+                    updates: {
+                        tags: videoInfo.tags,
+                        tagCategories: videoInfo.tagCategories
+                    }
+                });
             }
         }
     });
