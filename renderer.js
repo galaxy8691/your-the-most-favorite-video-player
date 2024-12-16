@@ -6,6 +6,7 @@ let watchFolders = new Set();
 let currentVideoId = null;
 let activeTagFilters = [];
 let randomPlayEnabled = false;
+let player = null;
 
 // 全局标签分类映射
 let globalTagMapping = {};
@@ -53,32 +54,174 @@ function hideLoading() {
 }
 
 // 初始化视频播放器
-const videoPlayer = document.getElementById('video-player');
+document.addEventListener('DOMContentLoaded', () => {
+    // 初始化 Video.js 播放器
+    player = videojs('video-player', {
+        controls: true,
+        autoplay: false,
+        preload: 'metadata',
+        fluid: true,
+        controlBar: {
+            children: [
+                'playToggle',
+                'volumePanel',
+                'currentTimeDisplay',
+                'timeDivider',
+                'durationDisplay',
+                'progressControl',
+                'remainingTimeDisplay',
+                'fullscreenToggle'
+            ]
+        }
+    });
 
-// 音频错误处理
-videoPlayer.addEventListener('error', (e) => {
-    console.error('Video Error:', e);
-    document.getElementById('current-video-info').textContent = 
-        '视频播放出错，请尝试其他视频';
-});
+    // 音频错误处理
+    player.on('error', (e) => {
+        console.error('Video Error:', e);
+        document.getElementById('current-video-info').textContent = 
+            '视频播放出错，请尝试其他视频';
+    });
 
-// 确保音量正
-videoPlayer.volume = 1.0;
+    // 确保音量正常
+    player.volume(1.0);
 
-// 视频播放结束处理
-videoPlayer.addEventListener('ended', () => {
-    // 不重置视频位置，保持在结束位置
-    // 发送最终的播放进度
-    if (currentVideoId) {
-        ipcRenderer.send('update-video-progress', {
-            videoId: currentVideoId,
-            currentTime: videoPlayer.duration,
-            duration: videoPlayer.duration
+    // 视频播放结束处理
+    player.on('ended', () => {
+        // 不重置视频位置，保持在结束位置
+        // 发送最终的播放进度
+        if (currentVideoId) {
+            ipcRenderer.send('update-video-progress', {
+                videoId: currentVideoId,
+                currentTime: player.duration(),
+                duration: player.duration()
+            });
+
+            // 播放下一个视频
+            playNextVideo();
+        }
+    });
+
+    // 跟踪视频播放进度
+    player.on('timeupdate', () => {
+        if (currentVideoId) {
+            // 每次更新进度时都保存当前时间
+            const currentTime = player.currentTime();
+            const duration = player.duration();
+            
+            ipcRenderer.send('update-video-progress', {
+                videoId: currentVideoId,
+                currentTime: currentTime,
+                duration: duration
+            });
+        }
+    });
+
+    // 视频加载完成后的处理
+    player.on('loadedmetadata', async () => {
+        if (currentVideoId) {
+            // 通知视频开始播放
+            ipcRenderer.send('video-started', {
+                videoId: currentVideoId
+            });
+            
+            // 获取视频时长（如果还没有）
+            const currentVideo = videoList.find(v => v.id === currentVideoId);
+            if (currentVideo && !currentVideo.duration) {
+                try {
+                    const duration = player.duration();
+                    currentVideo.duration = duration;
+                    
+                    // 更新视频信息显示
+                    const videoItem = document.querySelector(`.video-item[data-video-id="${currentVideoId}"]`);
+                    if (videoItem) {
+                        const info = videoItem.querySelector('.video-item-info');
+                        if (info) {
+                            const relativePath = getRelativePath(currentVideo.path, currentVideo.folder);
+                            let infoText = `位置: ${relativePath}\n时长: ${formatDuration(duration)}`;
+                            if (currentVideo.lastPlayed) {
+                                infoText += `\n上次播放: ${formatDate(currentVideo.lastPlayed)}`;
+                            }
+                            if (currentVideo.watchTime > 0) {
+                                const progress = Math.round((currentVideo.watchTime / duration) * 100);
+                                infoText += `\n播放进度: ${progress}% (${formatDuration(currentVideo.watchTime)})`;
+                            }
+                            if (currentVideo.playCount > 0) {
+                                infoText += `\n播放次数: ${currentVideo.playCount}次`;
+                                if (currentVideo.significantPlays > 0) {
+                                    infoText += ` (完整观看${currentVideo.significantPlays}次)`;
+                                }
+                            }
+                            info.textContent = infoText;
+                        }
+                    }
+
+                    // 保存时长信息
+                    ipcRenderer.send('video-metadata-loaded', {
+                        videoId: currentVideoId,
+                        duration: duration
+                    });
+                } catch (error) {
+                    console.error('Error getting video duration:', error);
+                }
+            }
+        }
+        
+        // 确保视频可以播放
+        player.play().catch(e => {
+            console.error('Autoplay failed:', e);
+            // 如果自动播放失败，添加点击事件让用户手动触发播放
+            const playPromise = player.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
+                    // 如果还是失败，添加点击事件让用户手动触发播放
+                    player.one('click', () => {
+                        player.play();
+                    });
+                });
+            }
         });
+    });
 
-        // 播放下一个视频
-        playNextVideo();
-    }
+    initializePlayerRating();
+    initializeTagInput();
+    initializeQuickTags();
+    initializeTagManager();
+    initializeTagFilter();
+    initializeFolderManager();
+    addRandomPlayControl();  // 添加随机播放控制
+
+    // 添加上一个/下一个视频按钮的事件监听
+    document.getElementById('prev-video').addEventListener('click', playPrevVideo);
+    document.getElementById('next-video').addEventListener('click', playNextVideo);
+
+    // 添加键盘快捷键
+    document.addEventListener('keydown', (e) => {
+        // 只在没有输入框获得焦点时响应快捷键
+        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+            switch (e.key) {
+                case 'PageUp':
+                    playPrevVideo();
+                    break;
+                case 'PageDown':
+                    playNextVideo();
+                    break;
+                case 'ArrowRight':
+                    // 向前快进15秒
+                    if (player && player.duration()) {
+                        const newTime = Math.min(player.currentTime() + 15, player.duration());
+                        player.currentTime(newTime);
+                    }
+                    break;
+                case 'ArrowLeft':
+                    // 向后快退15秒
+                    if (player) {
+                        const newTime = Math.max(player.currentTime() - 15, 0);
+                        player.currentTime(newTime);
+                    }
+                    break;
+            }
+        }
+    });
 });
 
 // 播放下一个视频
@@ -150,153 +293,6 @@ function addRandomPlayControl() {
     });
 }
 
-// 跟踪视频播放进度
-videoPlayer.addEventListener('timeupdate', () => {
-    if (currentVideoId) {
-        // 每次更新进度时都保存当前时间
-        const currentTime = videoPlayer.currentTime;
-        const duration = videoPlayer.duration;
-        
-        ipcRenderer.send('update-video-progress', {
-            videoId: currentVideoId,
-            currentTime: currentTime,
-            duration: duration
-        });
-    }
-});
-
-// 视频加载完成后自动播放
-videoPlayer.addEventListener('loadedmetadata', async () => {
-    if (currentVideoId) {
-        // 通知视频开始播放
-        ipcRenderer.send('video-started', {
-            videoId: currentVideoId
-        });
-        
-        // 获取视频时长（如果还没有）
-        const currentVideo = videoList.find(v => v.id === currentVideoId);
-        if (currentVideo && !currentVideo.duration) {
-            try {
-                const duration = videoPlayer.duration;
-                currentVideo.duration = duration;
-                
-                // 更新视频信息显示
-                const videoItem = document.querySelector(`.video-item[data-video-id="${currentVideoId}"]`);
-                if (videoItem) {
-                    const info = videoItem.querySelector('.video-item-info');
-                    if (info) {
-                        const relativePath = getRelativePath(currentVideo.path, currentVideo.folder);
-                        let infoText = `位置: ${relativePath}\n时长: ${formatDuration(duration)}`;
-                        if (currentVideo.lastPlayed) {
-                            infoText += `\n上次播放: ${formatDate(currentVideo.lastPlayed)}`;
-                        }
-                        if (currentVideo.watchTime > 0) {
-                            const progress = Math.round((currentVideo.watchTime / duration) * 100);
-                            infoText += `\n播放进度: ${progress}% (${formatDuration(currentVideo.watchTime)})`;
-                        }
-                        if (currentVideo.playCount > 0) {
-                            infoText += `\n播放次数: ${currentVideo.playCount}次`;
-                            if (currentVideo.significantPlays > 0) {
-                                infoText += ` (完整观看${currentVideo.significantPlays}次)`;
-                            }
-                        }
-                        info.textContent = infoText;
-                    }
-                }
-                
-                // 保存时长信息
-                ipcRenderer.send('video-metadata-loaded', {
-                    videoId: currentVideoId,
-                    duration: duration
-                });
-            } catch (error) {
-                console.error('Error getting video duration:', error);
-            }
-        }
-    }
-    
-    // 确保视频可以播放
-    videoPlayer.play().catch(e => {
-        console.error('Autoplay failed:', e);
-        // 如果自动播放再次尝试播放
-        const playPromise = videoPlayer.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(() => {
-                // 如果还是失败，添加点击事件让用户手动触发播放
-                videoPlayer.addEventListener('click', () => {
-                    videoPlayer.play();
-                }, { once: true });
-            });
-        }
-    });
-});
-
-// 添加文件夹按钮事件
-document.getElementById('add-folder').addEventListener('click', () => {
-    const quickScan = document.getElementById('quick-scan').checked;
-    showLoading('正在选择文件夹...');
-    ipcRenderer.send('select-folder', quickScan);
-});
-
-// 更新文件夹列表显示
-function updateFolderList() {
-    const container = document.getElementById('folder-container');
-    container.innerHTML = '';
-    
-    watchFolders.forEach(folderPath => {
-        const folderItem = document.createElement('div');
-        folderItem.className = 'folder-item';
-        
-        const pathText = document.createElement('div');
-        pathText.className = 'folder-path';
-        pathText.textContent = folderPath;
-        
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'remove-folder';
-        removeBtn.textContent = '移除';
-        removeBtn.onclick = () => {
-            watchFolders.delete(folderPath);
-            updateFolderList();
-            ipcRenderer.send('remove-folder', folderPath);
-        };
-        
-        folderItem.appendChild(pathText);
-        folderItem.appendChild(removeBtn);
-        container.appendChild(folderItem);
-    });
-}
-
-// 获取相对路径
-function getRelativePath(videoPath, folderPath) {
-    const relativePath = path.relative(folderPath, path.dirname(videoPath));
-    // 如果视频就在监视文件夹中，显示所在文件夹名称
-    if (relativePath === '') {
-        return path.basename(folderPath);
-    }
-    // 否则显示完整的相对路径
-    return path.join(path.basename(folderPath), relativePath);
-}
-
-// 格式化时间
-function formatDate(dateString) {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleString();
-}
-
-// 格式化时间
-function formatDuration(seconds) {
-    if (!seconds) return '未时长';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    
-    if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    }
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-}
-
 // 创建只读评分星星（用于列表显示）
 function createRatingStars(rating) {
     const ratingDiv = document.createElement('div');
@@ -337,9 +333,6 @@ function initializePlayerRating() {
         };
     });
 }
-
-// 在文档加载完成后初始化评分控件
-document.addEventListener('DOMContentLoaded', initializePlayerRating);
 
 // 排序视频列表
 function sortVideoList(videos, sortType) {
@@ -897,7 +890,7 @@ function updateTagManagerList() {
             const newCategory = category.value;
             globalTagMapping[tag] = newCategory;
             
-            // 通知主进程更新标签分类
+            // 通知主进程更新标签���类
             ipcRenderer.send('update-tag-category', {
                 tag: tag,
                 category: newCategory
@@ -941,53 +934,6 @@ function initializeFolderManager() {
         }
     };
 }
-
-// 在文档加载完成后初始化所有功能
-document.addEventListener('DOMContentLoaded', () => {
-    initializePlayerRating();
-    initializeTagInput();
-    initializeQuickTags();
-    initializeTagManager();
-    initializeTagFilter();
-    initializeFolderManager();
-    addRandomPlayControl();  // 添加随机播放控制
-
-    // 添加上一个/下一个视频按钮的事件监听
-    document.getElementById('prev-video').addEventListener('click', playPrevVideo);
-    document.getElementById('next-video').addEventListener('click', playNextVideo);
-
-    // 添加键盘快捷键
-    document.addEventListener('keydown', (e) => {
-        // 只在没有输入框获得焦点时响应快捷键
-        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-            switch (e.key) {
-                case 'PageUp':
-                    playPrevVideo();
-                    break;
-                case 'PageDown':
-                    playNextVideo();
-                    break;
-                case 'ArrowRight':
-                    // 向前快进15秒
-                    if (videoPlayer && videoPlayer.duration) {
-                        const newTime = Math.min(videoPlayer.currentTime + 15, videoPlayer.duration);
-                        videoPlayer.currentTime = newTime;
-                    }
-                    break;
-                case 'ArrowLeft':
-                    // 向后快退15秒
-                    if (videoPlayer) {
-                        const newTime = Math.max(videoPlayer.currentTime - 15, 0);
-                        videoPlayer.currentTime = newTime;
-                    }
-                    break;
-            }
-        }
-    });
-
-    // 请求保存的签过滤器状态
-    ipcRenderer.send('request-tag-filters');
-});
 
 // 接收保存的标签过滤器状态
 ipcRenderer.on('tag-filters-loaded', (event, filters) => {
@@ -1087,44 +1033,44 @@ function updateVideoList(maintainOrder = false) {
             // 确保当前播放的视频在视野内
             videoItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             
-            // 在切换视���前保存当前视频的播放进度
+            // 在切换视前保存当前视频的播放进度
             if (currentVideoId) {
                 const currentVideo = videoList.find(v => v.id === currentVideoId);
                 if (currentVideo) {
-                    currentVideo.watchTime = videoPlayer.currentTime;
+                    currentVideo.watchTime = player.currentTime();
                     // 发送最后的播放进度
                     ipcRenderer.send('update-video-progress', {
                         videoId: currentVideoId,
-                        currentTime: videoPlayer.currentTime,
-                        duration: videoPlayer.duration
+                        currentTime: player.currentTime(),
+                        duration: player.duration()
                     });
                 }
             }
             
             // 切换到新视频
             currentVideoId = video.id;
-            const wasPlaying = !videoPlayer.paused;
-            const oldSrc = videoPlayer.src;
-            videoPlayer.src = video.path;
+            const wasPlaying = player && !player.paused();
+            const oldSrc = player.currentSrc();
+            player.src({ type: 'video/mp4', src: video.path });
             
             // 检查是否应该从头开始播放
             const isVideoFinished = video.watchTime >= (video.duration * 0.98); // 如果播放进度超过98%，认为已完成
             if (isVideoFinished) {
-                videoPlayer.currentTime = 0; // 从开始播放
+                player.currentTime(0); // 从开始播放
             } else {
-                videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
+                player.currentTime(video.watchTime || 0); // 否则从上次播放位置继续
             }
             
-            // 如果之前在播放，或者这是新选择的视频，就自动播���
+            // 如果之前在播放，或者这是新选择的视频，就自动播放
             if (wasPlaying || oldSrc !== video.path) {
-                const playPromise = videoPlayer.play();
+                const playPromise = player.play();
                 if (playPromise !== undefined) {
                     playPromise.catch(e => {
                         console.error('Play failed:', e);
                         // 如果播放失败，添加一次性点击事件
-                        videoPlayer.addEventListener('click', () => {
-                            videoPlayer.play();
-                        }, { once: true });
+                        player.one('click', () => {
+                            player.play();
+                        });
                     });
                 }
             }
@@ -1156,7 +1102,7 @@ document.getElementById('sort-type').addEventListener('change', () => {
     updateVideoList(false);
 });
 
-// 更新单个视频的状态
+// 更新单个视频的���态
 function updateVideoState(videoId, updates) {
     const videoItem = document.querySelector(`.video-item[data-video-id="${videoId}"]`);
     if (videoItem) {
@@ -1219,7 +1165,7 @@ function updateVideoState(videoId, updates) {
                     oldTags.replaceWith(newTags);
                 }
                 
-                // 如果是当前播放的视频，新播放器标签
+                // 如果是当前播放的视频，更新播放器标签
                 if (videoId === currentVideoId) {
                     updatePlayerTags(updates.tags);
                 }
@@ -1350,3 +1296,69 @@ style.textContent = `
 }
 `;
 document.head.appendChild(style); 
+
+// 添加文件夹按钮事件
+document.getElementById('add-folder').addEventListener('click', () => {
+    const quickScan = document.getElementById('quick-scan').checked;
+    showLoading('正在选择文件夹...');
+    ipcRenderer.send('select-folder', quickScan);
+});
+
+// 更新文件夹列表显示
+function updateFolderList() {
+    const container = document.getElementById('folder-container');
+    container.innerHTML = '';
+    
+    watchFolders.forEach(folderPath => {
+        const folderItem = document.createElement('div');
+        folderItem.className = 'folder-item';
+        
+        const pathText = document.createElement('div');
+        pathText.className = 'folder-path';
+        pathText.textContent = folderPath;
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-folder';
+        removeBtn.textContent = '移除';
+        removeBtn.onclick = () => {
+            watchFolders.delete(folderPath);
+            updateFolderList();
+            ipcRenderer.send('remove-folder', folderPath);
+        };
+        
+        folderItem.appendChild(pathText);
+        folderItem.appendChild(removeBtn);
+        container.appendChild(folderItem);
+    });
+}
+
+// 获取相对路径
+function getRelativePath(videoPath, folderPath) {
+    const relativePath = path.relative(folderPath, path.dirname(videoPath));
+    // 如果视频就在监视文件夹中，显示所在文件夹名称
+    if (relativePath === '') {
+        return path.basename(folderPath);
+    }
+    // 否则显示完整的相对路径
+    return path.join(path.basename(folderPath), relativePath);
+}
+
+// 格式化时间
+function formatDate(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// 格式化时间
+function formatDuration(seconds) {
+    if (!seconds) return '未时长';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+} 
