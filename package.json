@@ -1,6 +1,6 @@
 {
   "name": "ytmfvp",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Your The Most Favorite Video Player - A powerful local video player and manager",
   "main": "main.js",
   "author": "galaxy8691",
@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder build",
-    "build:win": "electron-builder build --win",
+    "build:win": "electron-builder build --dir --config.win.target=dir --config.asar=false",
     "build:mac": "electron-builder build --mac",
     "build:linux": "electron-builder build --linux"
   },
@@ -30,29 +30,16 @@
     },
     "files": [
       "**/*",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
       "!**/node_modules/.bin",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.editorconfig",
-      "!**/._*",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": ["dir"]
     },
-    "mac": {
-      "target": "dmg",
-      "icon": "build/icon.icns"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "build/icon.png"
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
     }
   }
 }
