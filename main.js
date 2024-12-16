@@ -4,6 +4,7 @@ const fs = require('fs');
 const chokidar = require('chokidar');
 const crypto = require('crypto');
 const { getVideoDurationInSeconds } = require('get-video-duration');
+const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 
 let mainWindow;
 let watcher;
@@ -16,7 +17,10 @@ let historicalTags = new Set();  // 存储所有历史使用过的标签
 const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.wmv'];
 
 // 统一的设置文件路径
-const settingsPath = path.join(__dirname, 'settings.json');
+const settingsPath = app.isPackaged
+  ? path.join(process.cwd(), 'settings.json')
+  : path.join(__dirname, 'settings.json');
+console.log('Settings file path:', settingsPath);
 
 // 默认标签分类
 const defaultTagCategories = {
@@ -52,7 +56,18 @@ function getVideoId(filePath) {
 // 保存所有设置
 function saveSettings(immediate = false) {
     try {
-        // 获取标签过滤器状态，确保在窗口被销毁时不会出错
+        // 检查目录是否可写
+        try {
+            fs.accessSync(path.dirname(settingsPath), fs.constants.W_OK);
+        } catch (err) {
+            console.error('Settings directory is not writable:', err);
+            if (mainWindow) {
+                mainWindow.webContents.send('settings-save-error', '无法保存设置文件，请确保程序有写入权限');
+            }
+            return;
+        }
+
+        // 获取标签过滤器状态，确保在窗口被销毁时会出错
         let activeTagFilters = [];
         if (mainWindow && !mainWindow.isDestroyed()) {
             activeTagFilters = mainWindow.webContents.activeTagFilters || [];
@@ -455,6 +470,11 @@ async function updateVideoList(quickScan = false) {
         }
     }
 }
+
+// 设置 ffmpeg 路径
+process.env.FFMPEG_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  : ffmpeg.path;
 
 app.whenReady().then(() => {
     // 先建口
