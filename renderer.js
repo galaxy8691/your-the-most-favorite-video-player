@@ -34,7 +34,7 @@ function showLoading(message) {
     overlay.classList.add('active');
     // 移除阻塞样式
     overlay.style.pointerEvents = 'none';
-    // 只让取����按钮可以点击
+    // 只让取按钮可以点击
     cancelBtn.style.pointerEvents = 'auto';
 }
 
@@ -218,7 +218,7 @@ videoPlayer.addEventListener('loadedmetadata', async () => {
     // 确保视频可以播放
     videoPlayer.play().catch(e => {
         console.error('Autoplay failed:', e);
-        // 如果自动播放��再次尝试播放
+        // 如果自动播放再次尝试播放
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(() => {
@@ -967,6 +967,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'PageDown':
                     playNextVideo();
                     break;
+                case 'ArrowRight':
+                    // 向前快进15秒
+                    if (videoPlayer && videoPlayer.duration) {
+                        const newTime = Math.min(videoPlayer.currentTime + 15, videoPlayer.duration);
+                        videoPlayer.currentTime = newTime;
+                    }
+                    break;
+                case 'ArrowLeft':
+                    // 向后快退15秒
+                    if (videoPlayer) {
+                        const newTime = Math.max(videoPlayer.currentTime - 15, 0);
+                        videoPlayer.currentTime = newTime;
+                    }
+                    break;
             }
         }
     });
@@ -1073,7 +1087,7 @@ function updateVideoList(maintainOrder = false) {
             // 确保当前播放的视频在视野内
             videoItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             
-            // 在切换视频前保存当前视频的播放进度
+            // 在切换视���前保存当前视频的播放进度
             if (currentVideoId) {
                 const currentVideo = videoList.find(v => v.id === currentVideoId);
                 if (currentVideo) {
@@ -1101,7 +1115,7 @@ function updateVideoList(maintainOrder = false) {
                 videoPlayer.currentTime = video.watchTime || 0; // 否则从上次播放位置继续
             }
             
-            // 如果之前在播放，或者这是新选择的视频，就自动播放
+            // 如果之前在播放，或者这是新选择的视频，就自动播���
             if (wasPlaying || oldSrc !== video.path) {
                 const playPromise = videoPlayer.play();
                 if (playPromise !== undefined) {
